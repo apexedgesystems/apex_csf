@@ -57,6 +57,8 @@ TransientResult runRc(double tEnd, double tStep) {
  *
  * 1 us in steps of 1 ns is a thousand steps, and 1 s in steps of 0.1 s is
  * ten, though neither sum of steps lands on the end exactly in binary.
+ * 1.3 us in steps of 0.1 us leaves 2e-22 s over after thirteen steps in
+ * binary: that is not a fourteenth.
  */
 TEST(TransientSteppingTest, WholeSpanTakesItsNumberOfSteps) {
   struct Case {
@@ -64,12 +66,16 @@ TEST(TransientSteppingTest, WholeSpanTakesItsNumberOfSteps) {
     double tStep;
     std::size_t steps;
   };
-  for (const Case& CASE : {Case{1e-6, 1e-9, 1000}, Case{1.0, 0.1, 10}, Case{5e-3, 1e-5, 500}}) {
+  for (const Case& CASE : {Case{1e-6, 1e-9, 1000}, Case{1.0, 0.1, 10}, Case{5e-3, 1e-5, 500},
+                           Case{1.3e-6, 1e-7, 13}}) {
     SCOPED_TRACE(CASE.tStep);
     const TransientResult RESULT = runRc(CASE.tEnd, CASE.tStep);
     ASSERT_TRUE(RESULT.success) << RESULT.errorMessage;
     EXPECT_EQ(RESULT.stepsTaken, CASE.steps);
-    ASSERT_EQ(RESULT.history.size(), CASE.steps + 1);
+    if (RESULT.history.size() != CASE.steps + 1) {
+      ADD_FAILURE() << RESULT.history.size() << " samples for " << CASE.steps << " steps";
+      continue;
+    }
     EXPECT_EQ(RESULT.finalTime, CASE.tEnd);
     EXPECT_EQ(RESULT.history.back().time, CASE.tEnd);
 
@@ -91,6 +97,19 @@ TEST(TransientSteppingTest, PartialSpanEndsWithAShorterStep) {
   EXPECT_EQ(RESULT.history.back().time, 0.75e-3);
   EXPECT_NEAR(RESULT.history[7].time, 0.7e-3, 1e-15);
   EXPECT_NEAR(RESULT.history[8].time - RESULT.history[7].time, 0.5e-4, 1e-15);
+
+  // The last step is taken at its own length: the capacitor is where seven
+  // steps of 0.1 ms and one of 0.05 ms leave it.
+  TransientSolver byHand(3);
+  buildRc(byHand);
+  TransientState state;
+  state.resize(3, 1);
+  for (int k = 0; k < 7; ++k) {
+    ASSERT_EQ(byHand.step(1e-4, state), TransientStatus::SUCCESS);
+  }
+  ASSERT_EQ(byHand.step(0.5e-4, state), TransientStatus::SUCCESS);
+  EXPECT_NEAR(RESULT.finalState.voltage(2), state.voltage(2), 1e-12);
+  EXPECT_GT(std::fabs(RESULT.finalState.voltage(2) - RESULT.history[7].voltage(2)), 1e-3);
 }
 
 /** @test stepCount() is the number of steps run() takes. */
@@ -138,9 +157,12 @@ constexpr std::size_t MANY_SOURCES = 17;
  *        ground, and an RC on the first: nets 1 to 17 the sources (k volts on
  *        net k), net 18 the capacitor, charged from net 1 through 1 kohm.
  */
-void buildManySources(TransientSolver& solver) {
+void buildManySources(TransientSolver& solver, std::size_t* stamps = nullptr) {
   solver.companions().addCapacitor(MANY_SOURCES + 1, 0, 1e-6);
-  solver.setStampCallback([](MnaSystem& mna, double /*seconds*/) {
+  solver.setStampCallback([stamps](MnaSystem& mna, double /*seconds*/) {
+    if (stamps != nullptr) {
+      ++*stamps;
+    }
     for (std::uint32_t k = 1; k <= MANY_SOURCES; ++k) {
       mna.addVoltageSource(k, 0, static_cast<double>(k));
       mna.addConductance(k, 0, 1e-3);
@@ -164,8 +186,9 @@ TEST(TransientSteppingTest, MoreVoltageSourcesThanTheRoomSetAside) {
   enum class Keeping { NONE, DENSE, DUAL };
   for (const Keeping KEEPING : {Keeping::NONE, Keeping::DENSE, Keeping::DUAL}) {
     SCOPED_TRACE(static_cast<int>(KEEPING));
+    std::size_t stamps = 0;
     TransientSolver solver(MANY_SOURCES + 2);
-    buildManySources(solver);
+    buildManySources(solver, &stamps);
     solver.setCachedLU(KEEPING == Keeping::DENSE);
     solver.setDualLU(KEEPING == Keeping::DUAL);
 
@@ -176,6 +199,10 @@ TEST(TransientSteppingTest, MoreVoltageSourcesThanTheRoomSetAside) {
           (KEEPING == Keeping::DUAL) ? solver.stepDual(1e-5, 0, state) : solver.step(1e-5, state);
       ASSERT_EQ(STATUS, TransientStatus::SUCCESS) << "step " << k;
     }
+    // One stamp a step, and one more at the first: the step that found the
+    // room too small stamps again, and a factorization that is kept is
+    // stamped for once.
+    EXPECT_EQ(stamps, 2001U);
 
     TransientSolver atRest(MANY_SOURCES + 2);
     buildManySources(atRest);
@@ -207,9 +234,10 @@ TEST(TransientSteppingTest, RunWithMoreVoltageSourcesThanTheRoomSetAside) {
 namespace {
 
 /** @brief The RC with a load on the capacitor that a flag switches in. */
-void buildLoadedRc(TransientSolver& solver, const bool* loaded) {
+void buildLoadedRc(TransientSolver& solver, const bool* loaded, std::size_t* stamps) {
   solver.companions().addCapacitor(2, 0, 1e-6);
-  solver.setStampCallback([loaded](MnaSystem& mna, double /*seconds*/) {
+  solver.setStampCallback([loaded, stamps](MnaSystem& mna, double /*seconds*/) {
+    ++*stamps;
     mna.addVoltageSource(1, 0, 5.0);
     mna.addConductance(1, 2, 1e-3);
     if (*loaded) {
@@ -221,14 +249,16 @@ void buildLoadedRc(TransientSolver& solver, const bool* loaded) {
 /** @brief A solver stepped by stepDual beside one stepped plainly, on the same circuit. */
 struct DualBesidePlain {
   bool loaded = false;
+  std::size_t dualStamps = 0;  ///< Stamp calls of the two-state solver.
+  std::size_t plainStamps = 0; ///< Stamp calls of the plain solver.
   TransientSolver dual{3};
   TransientSolver plain{3};
   TransientState dualState;
   TransientState plainState;
 
   DualBesidePlain() {
-    buildLoadedRc(dual, &loaded);
-    buildLoadedRc(plain, &loaded);
+    buildLoadedRc(dual, &loaded, &dualStamps);
+    buildLoadedRc(plain, &loaded, &plainStamps);
     dual.setDualLU(true);
     dualState.resize(3, 1);
     plainState.resize(3, 1);
@@ -266,6 +296,10 @@ TEST(TransientSteppingTest, EachDualStateKeepsItsOwnStepLength) {
       return;
     }
   }
+  // A state stamps twice when it factorizes and once when its factors
+  // serve: each state factorized once for 10 us and once for 100 us, over
+  // ten steps.
+  EXPECT_EQ(pair.dualStamps, 14U);
 }
 
 /** @test invalidateCache() drops both states' factors: a changed circuit is solved as it is. */
