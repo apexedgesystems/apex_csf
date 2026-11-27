@@ -6,6 +6,7 @@
 
 #include "src/sim/electronics/algorithms/transient/inc/TransientSolver.hpp"
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/algorithms/mna/inc/MnaSystemSparse.hpp"
 
 #include <gtest/gtest.h>
 
@@ -13,8 +14,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <string>
+#include <vector>
 
 using sim::electronics::algorithms::mna::MnaSystem;
+using sim::electronics::algorithms::mna::MnaSystemSparse;
 using sim::electronics::algorithms::transient::TransientConfig;
 using sim::electronics::algorithms::transient::TransientResult;
 using sim::electronics::algorithms::transient::TransientSolver;
@@ -283,4 +287,184 @@ TEST(TransientSteppingTest, InvalidateCacheDropsTheDualFactors) {
   }
   // Half the supply across the equal resistors, the time constant halved.
   EXPECT_NEAR(pair.dualState.voltage(2), 2.5, 0.1);
+}
+
+/* ----------------------------- Newton Convergence ----------------------------- */
+
+namespace {
+
+/**
+ * @brief A nonlinear step with no fixed point: net 1 has 1 S to ground and a
+ *        source of 0.5 A that turns against whatever sign the iterate has,
+ *        so the solution is 0.5 V and -0.5 V by turns.
+ */
+void buildNoFixedPoint(TransientSolver& solver, std::size_t* stampCalls) {
+  solver.setSparse(true);
+  solver.setAlwaysReanalyze(true);
+  solver.setStatefulStampCallbackSparse(
+      [stampCalls](MnaSystemSparse& mna, double /*seconds*/, const std::vector<double>& iterate) {
+        ++*stampCalls;
+        mna.addConductance(1, 0, 1.0);
+        mna.addCurrent(1, 0, iterate[1] > 0.0 ? -0.5 : 0.5);
+      });
+}
+
+/**
+ * @brief A nonlinear step that closes on its solution by halves: 1 S to
+ *        ground and a source of half the iterate's voltage plus 1 A, so each
+ *        iterate is 1 + v/2 and the fixed point is 2 V.
+ */
+void buildContraction(TransientSolver& solver) {
+  solver.setSparse(true);
+  solver.setAlwaysReanalyze(true);
+  solver.setStatefulStampCallbackSparse(
+      [](MnaSystemSparse& mna, double /*seconds*/, const std::vector<double>& iterate) {
+        mna.addConductance(1, 0, 1.0);
+        mna.addCurrent(1, 0, 1.0 + 0.5 * iterate[1]);
+      });
+}
+
+/** @brief Iterations the contraction takes from 0 V until an iterate moves by no more than `volts`.
+ */
+std::size_t contractionIterations(double volts) {
+  double v = 0.0;
+  for (std::size_t k = 1;; ++k) {
+    const double NEXT = 1.0 + 0.5 * v;
+    if (std::fabs(NEXT - v) <= volts) {
+      return k;
+    }
+    v = NEXT;
+  }
+}
+
+} // namespace
+
+/**
+ * @test A Newton step that reaches its iteration limit without converging is
+ *       counted, and by default accepted.
+ */
+TEST(TransientSteppingTest, UnconvergedNewtonStepIsCounted) {
+  std::size_t stampCalls = 0;
+  TransientSolver solver(2);
+  buildNoFixedPoint(solver, &stampCalls);
+  TransientState state;
+  state.resize(2, 0);
+
+  EXPECT_EQ(solver.newtonIterationCount(), 0U);
+  EXPECT_EQ(solver.unconvergedStepCount(), 0U);
+  ASSERT_EQ(solver.step(1e-6, state), TransientStatus::SUCCESS);
+  EXPECT_EQ(stampCalls, 10U);
+  EXPECT_EQ(solver.newtonIterationCount(), 10U);
+  EXPECT_EQ(solver.unconvergedStepCount(), 1U);
+  EXPECT_DOUBLE_EQ(solver.time(), 1e-6);
+
+  solver.reset();
+  EXPECT_EQ(solver.newtonIterationCount(), 0U);
+  EXPECT_EQ(solver.unconvergedStepCount(), 0U);
+}
+
+/**
+ * @test With convergence required, a step that does not converge is not
+ *       taken: ERROR_CONVERGENCE, with time, node voltages and companions as
+ *       they were.
+ */
+TEST(TransientSteppingTest, RequiredConvergenceRefusesTheStep) {
+  std::size_t stampCalls = 0;
+  TransientSolver solver(3);
+  buildNoFixedPoint(solver, &stampCalls);
+  solver.companions().addCapacitor(2, 0, 1e-6);
+  solver.companions().capacitor(0).setInitialVoltage(0.25);
+  solver.setRequireConvergence(true);
+  TransientState state;
+  state.resize(3, 0);
+  state.nodeVoltages[1] = 0.125;
+
+  EXPECT_EQ(solver.step(1e-6, state), TransientStatus::ERROR_CONVERGENCE);
+  EXPECT_EQ(solver.unconvergedStepCount(), 1U);
+  EXPECT_EQ(solver.time(), 0.0);
+  EXPECT_EQ(state.voltage(1), 0.0) << "the voltages the solver held before the step";
+  EXPECT_EQ(solver.companions().capacitor(0).prevVoltage, 0.25);
+  EXPECT_EQ(solver.companions().capacitor(0).prevStep, 0.0);
+
+  // run() ends at such a step and says why.
+  TransientConfig config;
+  config.tEnd = 1e-5;
+  config.tStep = 1e-6;
+  config.dcOpPoint = false;
+  const TransientResult RESULT = solver.run(config, false);
+  EXPECT_FALSE(RESULT.success);
+  EXPECT_NE(RESULT.errorMessage.find("did not converge"), std::string::npos) << RESULT.errorMessage;
+  EXPECT_EQ(RESULT.stepsTaken, 0U);
+  EXPECT_EQ(RESULT.unconvergedSteps, 1U);
+}
+
+/** @test The iteration limit and the two tolerances are settings of the solver. */
+TEST(TransientSteppingTest, NewtonLimitAndTolerancesAreSettings) {
+  // The limit: three iterations of the step with no fixed point.
+  {
+    std::size_t stampCalls = 0;
+    TransientSolver solver(2);
+    buildNoFixedPoint(solver, &stampCalls);
+    solver.setNewtonIterationLimit(3);
+    TransientState state;
+    state.resize(2, 0);
+    ASSERT_EQ(solver.step(1e-6, state), TransientStatus::SUCCESS);
+    EXPECT_EQ(stampCalls, 3U);
+    EXPECT_EQ(solver.unconvergedStepCount(), 1U);
+  }
+
+  // The absolute tolerance alone: the contraction stops where its halving
+  // step falls under it.
+  for (const double VOLTS : {1e-2, 1e-6}) {
+    SCOPED_TRACE(VOLTS);
+    TransientSolver solver(2);
+    buildContraction(solver);
+    solver.setNewtonIterationLimit(60);
+    solver.setNewtonTolerances(VOLTS, 0.0);
+    TransientState state;
+    state.resize(2, 0);
+    ASSERT_EQ(solver.step(1e-6, state), TransientStatus::SUCCESS);
+    EXPECT_EQ(solver.newtonIterationCount(), contractionIterations(VOLTS));
+    EXPECT_EQ(solver.unconvergedStepCount(), 0U);
+    EXPECT_NEAR(state.voltage(1), 2.0, 2.0 * VOLTS);
+  }
+
+  // The relative tolerance alone: 10 % of about 2 V is reached sooner than
+  // one part in a million.
+  std::size_t loose = 0;
+  std::size_t tight = 0;
+  for (const double RELATIVE : {1e-1, 1e-6}) {
+    TransientSolver solver(2);
+    buildContraction(solver);
+    solver.setNewtonIterationLimit(60);
+    solver.setNewtonTolerances(0.0, RELATIVE);
+    TransientState state;
+    state.resize(2, 0);
+    ASSERT_EQ(solver.step(1e-6, state), TransientStatus::SUCCESS);
+    EXPECT_EQ(solver.unconvergedStepCount(), 0U);
+    (RELATIVE > 1e-3 ? loose : tight) = solver.newtonIterationCount();
+  }
+  EXPECT_LT(loose, tight);
+  EXPECT_GT(loose, 0U);
+}
+
+/** @test run() reports the Newton iterations and the unconverged steps it took. */
+TEST(TransientSteppingTest, RunReportsNewtonIterations) {
+  std::size_t stampCalls = 0;
+  TransientSolver solver(2);
+  buildNoFixedPoint(solver, &stampCalls);
+  TransientConfig config;
+  config.tEnd = 4e-6;
+  config.tStep = 1e-6;
+  config.dcOpPoint = false;
+  const TransientResult RESULT = solver.run(config, false);
+  ASSERT_TRUE(RESULT.success) << RESULT.errorMessage;
+  EXPECT_EQ(RESULT.stepsTaken, 4U);
+  EXPECT_EQ(RESULT.nonlinearIters, 40U);
+  EXPECT_EQ(RESULT.unconvergedSteps, 4U);
+
+  // A second run reports its own, not the solver's running totals.
+  const TransientResult AGAIN = solver.run(config, false);
+  EXPECT_EQ(AGAIN.nonlinearIters, 40U);
+  EXPECT_EQ(AGAIN.unconvergedSteps, 4U);
 }

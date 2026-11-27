@@ -30,6 +30,8 @@ inline TransientSolver::TransientSolver(std::size_t netCount)
 
 inline void TransientSolver::reset() noexcept {
   time_ = 0.0;
+  newtonIterationCount_ = 0;
+  unconvergedStepCount_ = 0;
   companions_.reset();
   std::fill(prevVoltages_.begin(), prevVoltages_.end(), 0.0);
   invalidateCache();
@@ -161,7 +163,9 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
         nrPreBatchCallback_(dt);
       }
 
+      bool converged = false;
       for (std::size_t iter = 0; iter < nrMaxIterations_; ++iter) {
+        ++newtonIterationCount_;
         sparseMna_->clear();
 
         if (statefulStampCallbackSparse_) {
@@ -213,11 +217,10 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
 
         // Convergence check
         double maxDelta = 0.0;
-        constexpr double RELTOL = 1e-3;
         for (std::size_t i = 0; i < n; ++i) {
-          double tol =
-              RELTOL * std::max(std::fabs(state.nodeVoltages[i]), std::fabs(nrPrevIterV_[i])) +
-              nrVoltageTolerance_;
+          double tol = nrRelativeTolerance_ *
+                           std::max(std::fabs(state.nodeVoltages[i]), std::fabs(nrPrevIterV_[i])) +
+                       nrVoltageTolerance_;
           double delta = std::fabs(state.nodeVoltages[i] - nrPrevIterV_[i]);
           if (delta > tol && delta > maxDelta) {
             maxDelta = delta;
@@ -227,11 +230,24 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
         std::copy(state.nodeVoltages.begin(), state.nodeVoltages.begin() + n, nrPrevIterV_.begin());
 
         if (maxDelta == 0.0) {
-          break; // Converged
+          converged = true;
+          break;
         }
       }
 
-      // Accept result (converged or not) and advance time
+      if (!converged) {
+        ++unconvergedStepCount_;
+        if (requireConvergence_) {
+          // The step is not taken. The companions and the time have not
+          // moved; the node voltages go back to those before the step.
+          std::copy(prevVoltages_.begin(), prevVoltages_.begin() + static_cast<std::ptrdiff_t>(n),
+                    state.nodeVoltages.begin());
+          sparseCacheValid_ = false;
+          return TransientStatus::ERROR_CONVERGENCE;
+        }
+      }
+
+      // Accept the result, converged or counted as not, and advance time
       prevVoltages_ = state.nodeVoltages;
       companions_.updateAll(state.nodeVoltages, dt, method_);
       time_ += dt;
@@ -712,6 +728,14 @@ inline TransientResult TransientSolver::run(const TransientConfig& config, bool 
     std::fill(state.branchCurrents.begin(), state.branchCurrents.end(), 0.0);
   }
 
+  // The run reports the Newton work of its own steps, not the solver's totals.
+  const std::size_t ITERATIONS_BEFORE = newtonIterationCount_;
+  const std::size_t UNCONVERGED_BEFORE = unconvergedStepCount_;
+  const auto COUNT_NEWTON = [this, &result, ITERATIONS_BEFORE, UNCONVERGED_BEFORE] {
+    result.nonlinearIters = newtonIterationCount_ - ITERATIONS_BEFORE;
+    result.unconvergedSteps = unconvergedStepCount_ - UNCONVERGED_BEFORE;
+  };
+
   // Reserve history if recording
   if (recordHistory) {
     result.history.reserve(STEPS + 1);
@@ -728,9 +752,13 @@ inline TransientResult TransientSolver::run(const TransientConfig& config, bool 
 
     if (stepStatus != TransientStatus::SUCCESS) {
       result.success = false;
-      result.errorMessage = "Time step failed at t=" + std::to_string(time_);
+      result.errorMessage = (stepStatus == TransientStatus::ERROR_CONVERGENCE
+                                 ? "Newton iteration did not converge at t="
+                                 : "Time step failed at t=") +
+                            std::to_string(time_);
       result.finalTime = time_;
       result.finalState = state;
+      COUNT_NEWTON();
       return result;
     }
 
@@ -743,6 +771,7 @@ inline TransientResult TransientSolver::run(const TransientConfig& config, bool 
     }
   }
 
+  COUNT_NEWTON();
   result.success = true;
   result.finalTime = time_;
   result.finalState = std::move(state);

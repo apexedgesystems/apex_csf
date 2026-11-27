@@ -42,19 +42,9 @@ struct TransientConfig {
   double tEnd = 1e-6;  ///< Simulation end time (seconds).
   double tStep = 1e-9; ///< Fixed time step (seconds).
 
-  double maxStep = 1e-8;  ///< Maximum adaptive step (if adaptive enabled).
-  double minStep = 1e-12; ///< Minimum adaptive step.
-
-  double relTol = 1e-3; ///< Relative tolerance for adaptive stepping.
-  double absTol = 1e-6; ///< Absolute tolerance for adaptive stepping.
-
   IntegrationMethod method = IntegrationMethod::BACKWARD_EULER;
 
-  bool adaptiveStep = false; ///< Enable adaptive time stepping.
-  bool dcOpPoint = true;     ///< Compute DC operating point before transient.
-
-  std::size_t maxNonlinearIter = 20; ///< Max Newton iterations per step.
-  double nonlinearTol = 1e-9;        ///< Nonlinear convergence tolerance.
+  bool dcOpPoint = true; ///< Compute DC operating point before transient.
 
   /// A span within this fraction of a step of a whole number of steps is
   /// that number of steps: (tEnd - tStart) / tStep is rarely whole in binary
@@ -168,9 +158,10 @@ struct TransientResult {
   bool success = false;     ///< True if simulation completed.
   std::string errorMessage; ///< Error description if failed.
 
-  std::size_t stepsTaken = 0;     ///< Number of time steps executed.
-  std::size_t nonlinearIters = 0; ///< Total nonlinear iterations.
-  double finalTime = 0.0;         ///< Simulation end time reached.
+  std::size_t stepsTaken = 0;       ///< Number of time steps executed.
+  std::size_t nonlinearIters = 0;   ///< Newton iterations of the run's nonlinear steps.
+  std::size_t unconvergedSteps = 0; ///< Nonlinear steps of the run that did not converge.
+  double finalTime = 0.0;           ///< Simulation end time reached.
 
   TransientState finalState;           ///< State at final time.
   std::vector<TransientState> history; ///< Optional full time history.
@@ -183,12 +174,10 @@ struct TransientResult {
  */
 enum class TransientStatus : std::uint8_t {
   SUCCESS = 0,
-  ERROR_INVALID_CONFIG = 1,     ///< Invalid configuration parameters.
-  ERROR_DC_FAILED = 2,          ///< DC operating point solve failed.
-  ERROR_STEP_FAILED = 3,        ///< Time step solve failed.
-  ERROR_CONVERGENCE = 4,        ///< Nonlinear iteration did not converge.
-  ERROR_TIMESTEP_TOO_SMALL = 5, ///< Adaptive step went below minimum.
-  ERROR_MATRIX_SINGULAR = 6     ///< MNA matrix is singular.
+  ERROR_INVALID_CONFIG = 1, ///< Invalid configuration parameters.
+  ERROR_DC_FAILED = 2,      ///< DC operating point solve failed.
+  ERROR_STEP_FAILED = 3,    ///< Time step solve failed.
+  ERROR_CONVERGENCE = 4     ///< Nonlinear iteration did not converge and convergence is required.
 };
 
 } // namespace sim::electronics::algorithms::transient

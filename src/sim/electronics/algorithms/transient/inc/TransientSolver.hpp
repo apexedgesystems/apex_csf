@@ -282,9 +282,13 @@ private:
   bool alwaysReanalyze_ = false;    ///< Sparse steps iterate Newton, factorizing each iteration.
 
   // Newton-Raphson iteration for nonlinear transient (used with alwaysReanalyze_)
-  std::size_t nrMaxIterations_ = 10; ///< Max NR iterations per timestep.
-  double nrVoltageTolerance_ = 1e-6; ///< Convergence: ngspice CKTvoltTol (absolute component).
-  std::vector<double> nrPrevIterV_;  ///< Previous NR iteration voltages (workspace).
+  std::size_t nrMaxIterations_ = 10;     ///< Max NR iterations per timestep.
+  double nrVoltageTolerance_ = 1e-6;     ///< Convergence: absolute part, volts.
+  double nrRelativeTolerance_ = 1e-3;    ///< Convergence: relative part.
+  bool requireConvergence_ = false;      ///< A step that does not converge is refused.
+  std::size_t newtonIterationCount_ = 0; ///< Newton iterations of nonlinear steps.
+  std::size_t unconvergedStepCount_ = 0; ///< Nonlinear steps that did not converge.
+  std::vector<double> nrPrevIterV_;      ///< Previous NR iteration voltages (workspace).
 
   /// Post-solve device limiting callback. Called after each NR matrix solve
   /// to apply per-device voltage limiting (fetlim). The callback receives
@@ -422,6 +426,57 @@ public:
    * @note RT-safe: sets boolean flag.
    */
   void setAlwaysReanalyze(bool enable) noexcept { alwaysReanalyze_ = enable; }
+
+  /**
+   * @brief Set how many Newton iterations a step may take.
+   * @param iterations The limit; at least one is taken.
+   * @note RT-safe.
+   */
+  void setNewtonIterationLimit(std::size_t iterations) noexcept {
+    nrMaxIterations_ = std::max<std::size_t>(1, iterations);
+  }
+
+  /**
+   * @brief Set when a Newton iteration counts as converged.
+   *
+   * It has when every net moved from the iterate before by no more than
+   * `relative` times the larger of its two voltages plus `absoluteVolts`.
+   *
+   * @param absoluteVolts Absolute part, in volts.
+   * @param relative Relative part.
+   * @note RT-safe.
+   */
+  void setNewtonTolerances(double absoluteVolts, double relative) noexcept {
+    nrVoltageTolerance_ = absoluteVolts;
+    nrRelativeTolerance_ = relative;
+  }
+
+  /**
+   * @brief Choose what a Newton step that does not converge does.
+   *
+   * Off (the default): the last iterate is accepted, the step returns
+   * SUCCESS and unconvergedStepCount() counts it. On: the step is not taken.
+   * It returns ERROR_CONVERGENCE with time, companions and node voltages as
+   * they were before it; the branch currents are the last iterate's.
+   *
+   * @note RT-safe.
+   */
+  void setRequireConvergence(bool require) noexcept { requireConvergence_ = require; }
+
+  /**
+   * @brief Newton iterations taken by nonlinear steps since construction or
+   *        reset().
+   * @note RT-safe.
+   */
+  [[nodiscard]] std::size_t newtonIterationCount() const noexcept { return newtonIterationCount_; }
+
+  /**
+   * @brief Nonlinear steps that reached the iteration limit without
+   *        converging, since construction or reset(): those accepted and
+   *        those refused.
+   * @note RT-safe.
+   */
+  [[nodiscard]] std::size_t unconvergedStepCount() const noexcept { return unconvergedStepCount_; }
 
   /**
    * @brief Set per-device NR voltage limiting callback.
