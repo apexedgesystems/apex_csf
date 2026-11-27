@@ -11,9 +11,11 @@ Reads an application's `app_data.toml` (its component manifest) and the
 JSON struct dictionaries `apex_data_gen` produced, and writes a complete
 target directory for the Zenith ground system: the component list with the
 protocol configuration, the opcode table for the command panel, default
-telemetry plot layouts, and a copy of the struct dictionaries. The core
-components every apex application carries are included without being
-listed.
+telemetry plot layouts, and the struct dictionaries generated from
+`apex_data_db`. Those are not copies: each element of a short numeric array
+is also written as a scalar field of its own (`name[i]`), so the console can
+name a channel for it; the array entry stays. The core components every apex
+application carries are included without being listed.
 
 ---
 
@@ -56,7 +58,7 @@ The output directory holds:
 app_manifest.json   component list and protocol configuration
 commands.json       opcode table for the command panel
 telemetry.json      default telemetry plot layouts
-structs/*.json      struct dictionaries, copied from apex_data_db
+structs/*.json      struct dictionaries generated from apex_data_db (array elements expanded)
 ```
 
 Through the build, which generates the dictionaries first:

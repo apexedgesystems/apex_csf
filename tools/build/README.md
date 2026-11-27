@@ -10,12 +10,12 @@ of the C++ build, and it is what the gate images are baked for.
 
 Executables install to `bin/tools/build/` in the build directory.
 
-| Tool            | What it does                                                              | Invoked by                                                               | Page                                                         |
-| --------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------ |
-| `cfg2bin`       | Converts a TOML or JSON parameter file to its binary TPRM blob            | `cmake/apex/Tprm.cmake`, `cmake/apex/TprmConstraintGen.cmake`            | [cfg2bin](rust/apex-build-tools/docs/cfg2bin.md)             |
-| `tprm_pack`     | Packs, unpacks, lists and diffs the TPRM archive of a configuration       | `cmake/apex/Tprm.cmake`                                                  | [tprm_pack](rust/apex-build-tools/docs/tprm_pack.md)         |
-| `cdef_gen`      | Generates a component's `.auto` headers from its spec                     | `make cdef`, `make check-cdef` (the gate that pins spec to header)       | [cdef_gen](rust/apex-build-tools/docs/cdef_gen.md)           |
-| `apex_data_gen` | Generates JSON struct dictionaries from registered `apex_data.toml` files | `cmake/apex/DataDefinitions.cmake`, `make apex-data-db`, `check-data-db` | [apex_data_gen](rust/apex-build-tools/docs/apex_data_gen.md) |
+| Tool            | What it does                                                              | Invoked by                                                                                                 | Page                                                         |
+| --------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `cfg2bin`       | Converts a TOML or JSON parameter file to its binary TPRM blob            | `cmake/apex/Tprm.cmake` (its constraint rows are read by `TprmConstraintGen.cmake`)                        | [cfg2bin](rust/apex-build-tools/docs/cfg2bin.md)             |
+| `tprm_pack`     | Packs, unpacks, lists and diffs the TPRM archive of a configuration       | `cmake/apex/Tprm.cmake`                                                                                    | [tprm_pack](rust/apex-build-tools/docs/tprm_pack.md)         |
+| `cdef_gen`      | Generates a component's `.auto` headers from its spec                     | `make cdef`, `make check-cdef` (the gate that pins spec to header)                                         | [cdef_gen](rust/apex-build-tools/docs/cdef_gen.md)           |
+| `apex_data_gen` | Generates JSON struct dictionaries from registered `apex_data.toml` files | `make apex-data-db`, `make check-data-db`, over the manifests `cmake/apex/DataDefinitions.cmake` registers | [apex_data_gen](rust/apex-build-tools/docs/apex_data_gen.md) |
 
 The four share the library crate `apex-tprm`
 ([proto profile](rust/apex-tprm/docs/proto_profile.md), which `cdef_gen`

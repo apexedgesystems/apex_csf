@@ -7,7 +7,7 @@ directory:
   app_manifest.json   - Component list + protocol config
   commands.json       - Opcode table for command panel
   telemetry.json      - Default telemetry plot layouts
-  structs/*.json      - Struct dictionaries (copied from apex_data_db)
+  structs/*.json      - Struct dictionaries (from apex_data_db, array elements expanded)
 
 Usage:
   zenith-target --app ApexOpsDemo --apps-dir apps \
