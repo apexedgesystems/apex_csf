@@ -366,6 +366,8 @@ Phases are an order. The scheduler places each task among the tasks of its group
 
 The tasks of a group may run at different rates. A 100 Hz step and a 1 Hz report at a later phase share a tick once a second; on that tick the report waits for the step, and on the others the step runs alone and waits for nothing. A task whose earlier phases are not dispatched on its tick (another rate, another offset, skipped while busy) does not wait for them.
 
+The same holds for a task its pool refuses (no free context, or the pool's ring rejecting it): it is a counted drop, the tasks of its group that were handed over neither wait for it nor count it, and the group's counter is back at 1 when they finish. A sequenced task is handed to its pool before its place is known and its worker holds until the tick thread has tried every entry of the slot, so the place is always among the tasks that were accepted.
+
 ### McuScheduler for MCUs
 
 Zero-heap scheduler with compile-time-sized task table:

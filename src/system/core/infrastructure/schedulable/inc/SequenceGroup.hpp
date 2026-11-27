@@ -13,7 +13,8 @@
  * of a group need not share a rate: on each tick the scheduler orders
  * the group's tasks it dispatches on that tick, and a task waits for
  * exactly the lower phases that run with it. A task alone in its group
- * on a tick waits for nothing. Any integers that sort the tasks will do;
+ * on a tick waits for nothing, and a task the scheduler could not hand
+ * to its pool takes no part in that tick's order. Any integers that sort the tasks will do;
  * numbering them 1, 2, 3 or counting tasks as the example below does
  * comes to the same order.
  *

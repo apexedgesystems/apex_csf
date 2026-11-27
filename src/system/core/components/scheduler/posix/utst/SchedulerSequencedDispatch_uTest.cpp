@@ -18,6 +18,9 @@
  *  - Two tasks at one phase both finish before the phase after them
  *    starts, and the phase numbers need not count tasks.
  *  - The group's counter rests at 1 after every tick.
+ *  - A task the scheduler could not hand to its pool is not counted by
+ *    the tasks of its group that it did hand over: a later phase does not
+ *    wait for it, and the counter rests at 1 so the next tick is ordered.
  */
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerMultiThread.hpp"
@@ -115,6 +118,83 @@ struct PhasePair {
 };
 
 class StepAndSlowerTask : public ::testing::TestWithParam<PhasePair> {};
+
+/// A scheduler with one pool per entry of WORKERS, not yet initialized:
+/// a test that needs the context pools sized for its table adds its tasks
+/// and then calls init().
+std::unique_ptr<SchedulerMultiThread> withPools(const std::vector<std::size_t>& workers) {
+  std::vector<PoolSpec> specs;
+  for (const std::size_t COUNT : workers) {
+    PoolSpec spec;
+    spec.numThreads = COUNT;
+    specs.push_back(spec);
+  }
+  return std::make_unique<SchedulerMultiThread>(100, testLogDir(), specs);
+}
+
+/// Poll PRED until it holds or LIMIT passes.
+template <typename Pred> bool waitFor(Pred pred, std::chrono::milliseconds limit) {
+  const auto END = std::chrono::steady_clock::now() + limit;
+  while (!pred()) {
+    if (std::chrono::steady_clock::now() > END) {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return true;
+}
+
+/// Tasks that hold contexts, and a two-phase group dispatched once those
+/// contexts are nearly or wholly gone.
+struct Admission {
+  std::atomic<bool> releaseFillers{false}; ///< Fillers return once set.
+  std::atomic<bool> releaseFirst{false};   ///< A held first phase returns once set.
+  std::atomic<bool> firstInside{false};    ///< The first phase is held in its body.
+  std::atomic<int> holdFirstOnRun{0};      ///< Run of the first phase to hold; 0 for none.
+  std::atomic<int> firstRuns{0};
+  std::atomic<int> secondRuns{0};
+  std::atomic<int> overlaps{0}; ///< Second-phase runs that found the first inside.
+
+  static std::uint8_t filler(void* raw) noexcept {
+    auto* s = static_cast<Admission*>(raw);
+    (void)waitFor([s] { return s->releaseFillers.load(std::memory_order_acquire); },
+                  std::chrono::seconds(10));
+    return 0;
+  }
+
+  static std::uint8_t first(void* raw) noexcept {
+    auto* s = static_cast<Admission*>(raw);
+    const int RUN = s->firstRuns.fetch_add(1, std::memory_order_acq_rel) + 1;
+    if (RUN == s->holdFirstOnRun.load(std::memory_order_acquire)) {
+      s->firstInside.store(true, std::memory_order_release);
+      (void)waitFor([s] { return s->releaseFirst.load(std::memory_order_acquire); },
+                    std::chrono::seconds(10));
+      s->firstInside.store(false, std::memory_order_release);
+    }
+    return 0;
+  }
+
+  static std::uint8_t second(void* raw) noexcept {
+    auto* s = static_cast<Admission*>(raw);
+    if (s->firstInside.load(std::memory_order_acquire)) {
+      s->overlaps.fetch_add(1, std::memory_order_acq_rel);
+    }
+    s->secondRuns.fetch_add(1, std::memory_order_acq_rel);
+    return 0;
+  }
+};
+
+/// Lets every held task go and stops the scheduler when a test ends, on
+/// a failed expectation as on a passed one.
+struct ReleaseAndStop {
+  Admission& state;
+  SchedulerMultiThread& sched;
+  ~ReleaseAndStop() {
+    state.releaseFillers.store(true, std::memory_order_release);
+    state.releaseFirst.store(true, std::memory_order_release);
+    sched.shutdown();
+  }
+};
 
 } // namespace
 
@@ -225,4 +305,109 @@ TEST(SchedulerSequencedDispatchTest, APhaseWaitsForEveryTaskOfTheEarlierPhase) {
                                               "tasks had finished";
   EXPECT_EQ(seq.counter()->load(), 1);
   sched->shutdown();
+}
+
+/* ----------------------------- A task that is not admitted ----------------------------- */
+
+/**
+ * @test The first phase of a group cannot be handed to its pool, whose
+ *       contexts are all held; the second phase, in another pool, runs
+ *       without waiting for it and the counter rests at 1.
+ */
+TEST(SchedulerSequencedDispatchTest, ALaterPhaseDoesNotWaitForATaskThatWasNotAdmitted) {
+  Admission state;
+  SequenceGroup seq(2);
+  auto sched = withPools({1, 1});
+
+  // Pool 0 gets five contexts for this table (a burst of three and two for
+  // its one worker); five fillers hold them all from ticks 0 and 1.
+  std::vector<std::unique_ptr<SchedulableTask>> fillers;
+  for (int i = 0; i < 5; ++i) {
+    fillers.push_back(
+        std::make_unique<SchedulableTask>(DelegateU8{&Admission::filler, &state}, "filler"));
+    const std::uint16_t OFFSET = (i < 3) ? 0 : 1;
+    ASSERT_EQ(sched->addTask(*fillers.back(), TaskConfig(1, 1, OFFSET, 0, 0)), Status::SUCCESS);
+  }
+  SchedulableTask first(DelegateU8{&Admission::first, &state}, "first");
+  SchedulableTask second(DelegateU8{&Admission::second, &state}, "second");
+  seq.addTask(first, 1);
+  seq.addTask(second, 2);
+  ASSERT_EQ(sched->addTask(first, TaskConfig(1, 1, 2, 127, 0), &seq), Status::SUCCESS);
+  ASSERT_EQ(sched->addTask(second, TaskConfig(1, 1, 2, -128, 1), &seq), Status::SUCCESS);
+  ASSERT_EQ(sched->init(), 0U);
+  sched->setContextFallback(false);
+  const ReleaseAndStop AT_EXIT{state, *sched};
+
+  (void)sched->executeTasksOnCycleMulti(0);
+  (void)sched->executeTasksOnCycleMulti(1);
+  ASSERT_EQ(sched->totalDispatchDrops(), 0U);
+  (void)sched->executeTasksOnCycleMulti(2);
+  ASSERT_EQ(sched->totalDispatchDrops(), 1U) << "the first phase was to find no context";
+
+  EXPECT_TRUE(waitFor([&state] { return state.secondRuns.load() == 1; }, std::chrono::seconds(2)))
+      << "the second phase waited for a first phase that was never handed over";
+
+  state.releaseFillers.store(true, std::memory_order_release);
+  EXPECT_TRUE(sched->waitForInFlightTasks(5 * ONE_SECOND_NS));
+  EXPECT_EQ(state.firstRuns.load(), 0);
+  EXPECT_EQ(state.secondRuns.load(), 1);
+  EXPECT_EQ(seq.counter()->load(), 1) << "the counter rests at 1 after the tick's tasks";
+}
+
+/**
+ * @test The second phase of a group finds no context; the first runs
+ *       alone and leaves the counter at 1, so on the next tick the second
+ *       phase waits for the first as on any other.
+ */
+TEST(SchedulerSequencedDispatchTest, ATaskThatWasNotAdmittedLeavesTheNextTickInOrder) {
+  Admission state;
+  SequenceGroup seq(2);
+  auto sched = withPools({2});
+
+  // Eight contexts for this table (a burst of four and four for the two
+  // workers); seven fillers hold all but one from ticks 0 and 1.
+  std::vector<std::unique_ptr<SchedulableTask>> fillers;
+  for (int i = 0; i < 7; ++i) {
+    fillers.push_back(
+        std::make_unique<SchedulableTask>(DelegateU8{&Admission::filler, &state}, "filler"));
+    const std::uint16_t OFFSET = (i < 4) ? 0 : 1;
+    ASSERT_EQ(sched->addTask(*fillers.back(), TaskConfig(1, 1, OFFSET, 0, 0)), Status::SUCCESS);
+  }
+  SchedulableTask first(DelegateU8{&Admission::first, &state}, "first");
+  SchedulableTask second(DelegateU8{&Admission::second, &state}, "second");
+  seq.addTask(first, 1);
+  seq.addTask(second, 2);
+  ASSERT_EQ(sched->addTask(first, TaskConfig(1, 1, 2, 127, 0), &seq), Status::SUCCESS);
+  ASSERT_EQ(sched->addTask(second, TaskConfig(1, 1, 2, -128, 0), &seq), Status::SUCCESS);
+  ASSERT_EQ(sched->init(), 0U);
+  sched->setContextFallback(false);
+  const ReleaseAndStop AT_EXIT{state, *sched};
+
+  // First second: the second phase is dropped, the first runs alone.
+  (void)sched->executeTasksOnCycleMulti(0);
+  (void)sched->executeTasksOnCycleMulti(1);
+  (void)sched->executeTasksOnCycleMulti(2);
+  ASSERT_EQ(sched->totalDispatchDrops(), 1U) << "the second phase was to find no context";
+  state.releaseFillers.store(true, std::memory_order_release);
+  ASSERT_TRUE(sched->waitForInFlightTasks(5 * ONE_SECOND_NS));
+  EXPECT_EQ(state.firstRuns.load(), 1);
+  EXPECT_EQ(state.secondRuns.load(), 0);
+  EXPECT_EQ(seq.counter()->load(), 1) << "one task ran, and the counter is back at rest";
+
+  // Next second: both are admitted, and the first is held in its body.
+  state.holdFirstOnRun.store(2, std::memory_order_release);
+  (void)sched->executeTasksOnCycleMulti(100);
+  (void)sched->executeTasksOnCycleMulti(101);
+  ASSERT_TRUE(sched->waitForInFlightTasks(5 * ONE_SECOND_NS));
+  (void)sched->executeTasksOnCycleMulti(102);
+  ASSERT_EQ(sched->totalDispatchDrops(), 1U);
+  ASSERT_TRUE(waitFor([&state] { return state.firstInside.load(); }, std::chrono::seconds(2)));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_EQ(state.secondRuns.load(), 0) << "the second phase ran while the first was in its body";
+
+  state.releaseFirst.store(true, std::memory_order_release);
+  EXPECT_TRUE(sched->waitForInFlightTasks(5 * ONE_SECOND_NS));
+  EXPECT_EQ(state.secondRuns.load(), 1);
+  EXPECT_EQ(state.overlaps.load(), 0);
+  EXPECT_EQ(seq.counter()->load(), 1);
 }

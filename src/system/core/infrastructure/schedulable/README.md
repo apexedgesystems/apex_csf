@@ -226,7 +226,8 @@ tasks of a group need not share a rate. On each tick the scheduler
 orders the group's tasks it dispatches on that tick: a task waits for
 the lower phases that run with it and for nothing else, so a 1 Hz
 report at a later phase follows the 100 Hz step on the tick they share
-and the step runs unhindered on the others.
+and the step runs unhindered on the others. A task the scheduler could
+not hand to its pool on a tick takes no part in that tick's order.
 
 Frame contract: the tasks of a group dispatched on one tick must
 complete before the group is next dispatched; a group dispatched again

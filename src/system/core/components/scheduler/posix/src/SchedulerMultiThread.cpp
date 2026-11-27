@@ -414,9 +414,9 @@ void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryInd
       //  - SOFT modes: Violations expected, count tracked for shutdown summary
     }
     if constexpr (kSequenced) {
-      slotDispatch_.push_back(&entry);
+      slotDispatch_.push_back({&entry, nullptr});
     } else {
-      enqueueTask(&entry, tick, dispatchNs);
+      enqueueTask<false>(&entry, tick, dispatchNs);
     }
   }
   if constexpr (kSequenced) {
@@ -426,29 +426,42 @@ void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryInd
 
 void SchedulerMultiThread::enqueueSequencedSlot(std::uint16_t tick,
                                                 std::uint64_t dispatchNs) noexcept {
-  // A group's counter rests at 1 between ticks and each of the group's
-  // tasks advances it once when it completes. So a task that must follow
-  // AHEAD tasks waits for the counter to reach AHEAD + 1, and the last
-  // completion of TOGETHER tasks wraps it back to 1. Both are counted
-  // over the entries that run this tick: a task whose earlier phases are
-  // not on this tick, or were skipped, waits for none of them.
-  for (TaskEntry* entry : slotDispatch_) {
-    if (!entry->isSequenced()) {
-      enqueueTask(entry, tick, dispatchNs);
+  // Step 1: every entry goes to its pool, in slot order. A sequenced one
+  // goes with its wait unset: a worker that takes it holds at the start
+  // of the trampoline until step 2 has placed it. A pool can refuse any
+  // of them, and which it refuses is known only once all have been tried.
+  for (SlotDispatch& item : slotDispatch_) {
+    if (item.entry->isSequenced()) {
+      item.ctx = enqueueTask<true>(item.entry, tick, dispatchNs);
+    } else {
+      enqueueTask<false>(item.entry, tick, dispatchNs);
+    }
+  }
+
+  // Step 2: a group's counter rests at 1 between ticks and each of the
+  // group's tasks advances it once when it completes. So a task that must
+  // follow AHEAD tasks waits for the counter to reach AHEAD + 1, and the
+  // last completion of TOGETHER tasks wraps it back to 1. Both are
+  // counted over the entries the pools accepted this tick: a task whose
+  // earlier phases are not on this tick, were skipped, or were refused by
+  // their pool waits for none of them, and the counter wraps without them.
+  for (const SlotDispatch& item : slotDispatch_) {
+    if (item.ctx == nullptr) {
       continue;
     }
     int ahead = 0;
     int together = 0;
-    for (const TaskEntry* other : slotDispatch_) {
-      if (other->seqCounter != entry->seqCounter) {
+    for (const SlotDispatch& other : slotDispatch_) {
+      if (other.ctx == nullptr || other.entry->seqCounter != item.entry->seqCounter) {
         continue;
       }
       ++together;
-      if (other->seqPhase < entry->seqPhase) {
+      if (other.entry->seqPhase < item.entry->seqPhase) {
         ++ahead;
       }
     }
-    enqueueTask(entry, tick, dispatchNs, ahead + 1, together);
+    item.ctx->seqMaxPhase = together;
+    item.ctx->seqPhase.store(ahead + 1, std::memory_order_release);
   }
 }
 
@@ -563,11 +576,13 @@ std::uint8_t SchedulerMultiThread::taskTrampoline(void* raw) noexcept {
   auto* ctx = static_cast<TaskCtx*>(raw);
   TaskEntry* entry = ctx->entry;
 
-  // Wait for sequencing phase if this task is sequenced. An aborted
+  // Wait for sequencing phase if this task is sequenced: first for the
+  // tick thread to place this dispatch, then for the counter. An aborted
   // wait (scheduler stopping) skips execution and the phase advance --
   // the chain is dying, and advancing would fake phase completion.
   if (entry != nullptr && entry->isSequenced()) {
-    if (!waitForPhase(*entry->seqCounter, ctx->seqPhase, &ctx->self->stopping_)) {
+    const int WAIT = awaitPlacement(*ctx);
+    if (WAIT == 0 || !waitForPhase(*entry->seqCounter, WAIT, &ctx->self->stopping_)) {
       entry->markCompleted();
       const std::uint8_t poolIdAbort = ctx->poolId;
       if (poolIdAbort < ctx->self->ctxPools_.size()) {
@@ -599,11 +614,37 @@ std::uint8_t SchedulerMultiThread::taskTrampoline(void* raw) noexcept {
   return rc;
 }
 
-template <typename... SeqWait>
-void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
-                                       std::uint64_t dispatchNs, SeqWait... seqWait) noexcept {
-  static_assert(sizeof...(SeqWait) == 0 || sizeof...(SeqWait) == 2,
-                "a sequenced dispatch carries the wait and the wrap, any other nothing");
+int SchedulerMultiThread::awaitPlacement(const TaskCtx& ctx) noexcept {
+  // The tick thread places a dispatch before it leaves the slot that
+  // enqueued it, a few entries' work after the enqueue, so the wait is a
+  // spin in all but one case: the tick thread losing its CPU inside the
+  // slot. Past the spin the worker sleeps in short slices, which gives
+  // the CPU up under every scheduling policy and needs no wake from the
+  // tick thread.
+  constexpr unsigned SPIN_LIMIT = 1024U;
+  constexpr std::uint64_t SLEEP_NS = 20000U;
+  apex::helpers::cpu::ExponentialBackoff bk;
+  for (;;) {
+    const int WAIT = ctx.seqPhase.load(std::memory_order_acquire);
+    if (WAIT != 0) {
+      return WAIT;
+    }
+    if (ctx.self->stopping_.load(std::memory_order_acquire)) {
+      return 0;
+    }
+    if (bk.n < SPIN_LIMIT) {
+      bk.spinOnce();
+    } else {
+      std::this_thread::sleep_for(std::chrono::nanoseconds(SLEEP_NS));
+    }
+  }
+}
+
+template <bool kUnplaced>
+std::conditional_t<kUnplaced, TaskCtx*, void>
+SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
+                                  std::uint64_t dispatchNs) noexcept {
+  using Out = std::conditional_t<kUnplaced, TaskCtx*, void>;
   // First drop and every interval-th after: surfaces sustained exhaustion
   // without logging at tick rate from the dispatch path. Power of two so the
   // modulo compiles to a mask; the totalDispatchDrops_ counter stays exact.
@@ -632,7 +673,7 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
                             "(total drops: {})",
                             task->getLabel(), tick, totalDispatchDrops_));
     }
-    return;
+    return static_cast<Out>(nullptr);
   }
 
   // Mark task as dispatched (for deadline tracking)
@@ -641,10 +682,8 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
   ctx->tick = tick;
   ctx->poolId = poolId;
   ctx->entry = entry; // Store entry for sequencing in trampoline
-  if constexpr (sizeof...(SeqWait) == 2) {
-    const int WAIT[2] = {seqWait...};
-    ctx->seqPhase = WAIT[0];
-    ctx->seqMaxPhase = WAIT[1];
+  if constexpr (kUnplaced) {
+    ctx->seqPhase.store(0, std::memory_order_relaxed);
   }
   const auto STATUS = pools_[poolId]->tryEnqueue(task->getLabel().data(), {&taskTrampoline, ctx});
   if (STATUS != apex::concurrency::PoolStatus::SUCCESS) {
@@ -664,7 +703,9 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
                             "(status {}, total drops: {})",
                             task->getLabel(), tick, static_cast<int>(STATUS), totalDispatchDrops_));
     }
+    return static_cast<Out>(nullptr);
   }
+  return static_cast<Out>(ctx);
 }
 
 } // namespace scheduler

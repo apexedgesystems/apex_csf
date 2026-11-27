@@ -42,6 +42,8 @@
 namespace system_core {
 namespace scheduler {
 
+struct TaskCtx;
+
 // Import types from schedulable namespace
 using ::system_core::schedulable::SchedulableTask;
 using ::system_core::schedulable::SchedulableTaskBase;
@@ -567,12 +569,24 @@ protected:
   std::vector<std::uint8_t> slotHasSequenced_{};
 
   /**
+   * @brief One entry a sequenced slot dispatches this tick.
+   *
+   * CTX is the context the entry went to its pool with: set for a
+   * sequenced entry its pool accepted, null for one it did not and for
+   * every unsequenced entry.
+   */
+  struct SlotDispatch {
+    TaskEntry* entry{nullptr};
+    TaskCtx* ctx{nullptr};
+  };
+
+  /**
    * @brief Entries a sequenced slot dispatches this tick, in slot order.
    *
    * Tick thread only. Its capacity follows the largest slot, set where
    * entries are placed, so a dispatch allocates nothing.
    */
-  std::vector<TaskEntry*> slotDispatch_{};
+  std::vector<SlotDispatch> slotDispatch_{};
 
   /** @brief Recompute slotHasSequenced_ from the entries' sequencing. */
   void markSequencedSlots() noexcept;

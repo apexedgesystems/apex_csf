@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace system_core {
@@ -223,6 +224,20 @@ public:
   [[nodiscard]] std::size_t totalDispatchDrops() const noexcept { return totalDispatchDrops_; }
 
   /**
+   * @brief Whether a dispatch that finds its context pool empty allocates.
+   *
+   * A release build drops such a dispatch and counts it; a debug build
+   * allocates a context so the shortfall shows in ctxPoolAllocatedCount().
+   * This sets either behavior in either build. Call after init(), which
+   * creates the pools and applies the build's default.
+   */
+  void setContextFallback(bool enable) noexcept {
+    for (auto& pool : ctxPools_) {
+      pool->setFallbackAlloc(enable);
+    }
+  }
+
+  /**
    * @brief Contexts ever allocated by a pool (preallocation + any fallback).
    *
    * Debug builds track the count; release builds return 0. A value above
@@ -260,8 +275,8 @@ protected:
    * task's cadence per visit; the others, used for every slot that holds
    * no such task, test nothing per visit. The sequenced ones, used for a
    * slot that holds a sequenced task, first settle which entries run this
-   * tick and then give each sequenced entry its place among the tasks of
-   * its group that run with it; the others enqueue as they go.
+   * tick and then hand them over through enqueueSequencedSlot(); the
+   * others enqueue as they go.
    */
   template <bool kGated, bool kSequenced>
   void dispatchSlot(const std::vector<std::size_t>& entryIndices, std::uint64_t cycle,
@@ -271,9 +286,14 @@ protected:
   /**
    * @brief Enqueue the entries a sequenced slot runs this tick.
    *
-   * A sequenced entry waits for the tasks of its group, among those in
-   * slotDispatch_, whose phase is lower than its own; a task alone in its
-   * group on this tick waits for nothing.
+   * Two steps. Every entry in slotDispatch_ goes to its pool in slot
+   * order, a sequenced one with its wait unset, which holds its worker at
+   * the start of the trampoline. Then each sequenced entry its pool
+   * accepted is given its place among the accepted entries of its group:
+   * it waits for those whose phase is lower than its own, and a task
+   * alone in its group waits for nothing. An entry its pool refused is a
+   * counted drop and takes no part: no task waits for it and the group's
+   * counter wraps without it.
    */
   void enqueueSequencedSlot(std::uint16_t tick, std::uint64_t dispatchNs) noexcept;
 
@@ -284,14 +304,21 @@ protected:
 
   /**
    * @brief Hand one entry to its pool.
-   * @param seqWait For a sequenced entry, two values: the counter value
-   *        this dispatch waits for, then the value the counter wraps
-   *        after. For any other entry, nothing: an unsequenced dispatch
-   *        passes and stores no more than it needs.
+   * @tparam kUnplaced Whether the entry is sequenced. Such a dispatch
+   *         goes out with its wait unset and returns its context, null
+   *         when the pool refused it, for enqueueSequencedSlot() to
+   *         place. Any other returns nothing and stores no more than an
+   *         unsequenced dispatch needs.
    */
-  template <typename... SeqWait>
-  void enqueueTask(TaskEntry* entry, std::uint16_t tick, std::uint64_t dispatchNs,
-                   SeqWait... seqWait) noexcept;
+  template <bool kUnplaced>
+  std::conditional_t<kUnplaced, TaskCtx*, void> enqueueTask(TaskEntry* entry, std::uint16_t tick,
+                                                            std::uint64_t dispatchNs) noexcept;
+
+  /**
+   * @brief Wait, on a worker, for the tick thread to place a sequenced dispatch.
+   * @return The counter value to wait for, or 0 when the scheduler is stopping.
+   */
+  [[nodiscard]] static int awaitPlacement(const TaskCtx& ctx) noexcept;
 
   static std::uint8_t taskTrampoline(void* raw) noexcept;
 
