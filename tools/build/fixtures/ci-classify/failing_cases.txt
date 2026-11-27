@@ -1,0 +1,7 @@
+# Every case here is wrong, so the check has to fail each: `make
+# check-ci-classify` runs this table to hold the check to its own failures.
+cpp                     | README.md
+-                       | src/a.cpp
+# A file whose one COPY is read, named as one that must be refused.
+@refused tools/build/fixtures/ci-classify/whole_tree.Dockerfile
+@reader bakes:other.bin | FROM scratch AS bakes\nCOPY a.bin /tmp/\n

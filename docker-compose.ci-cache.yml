@@ -24,12 +24,20 @@ services:
         - ${REGISTRY}/apex.base:latest
         # dev-base shares build-base's lower half; reuse those layers too.
         - ${REGISTRY}/apex.build-base:latest
+        # It copies its format tools from the lint stage.
+        - ${REGISTRY}/apex.lint:latest
       cache_to: *inline-cache
 
   build-base:
     build:
       cache_from:
         - ${REGISTRY}/apex.build-base:latest
+      cache_to: *inline-cache
+
+  lint:
+    build:
+      cache_from:
+        - ${REGISTRY}/apex.lint:latest
       cache_to: *inline-cache
 
   dev:

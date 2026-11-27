@@ -74,9 +74,27 @@ runs:
         docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml \
           build "$SERVICE"
 
+        # A registry can refuse a push that succeeds a moment later, with
+        # nothing wrong on this side. Pushing a tag is idempotent, so a
+        # failed push is tried again before it fails the job: three attempts,
+        # twenty seconds apart, each failure reported as a warning.
+        push() {
+          local attempt
+          for attempt in 1 2 3; do
+            if docker push "$1"; then
+              return 0
+            fi
+            echo "::warning title=image push::attempt ${attempt} of 3 failed for $1"
+            if [ "$attempt" -lt 3 ]; then
+              sleep 20
+            fi
+          done
+          return 1
+        }
+
         for tag in latest "$SHA"; do
           docker tag "$IMAGE" "$REGISTRY/$IMAGE:${tag}"
-          docker push "$REGISTRY/$IMAGE:${tag}"
+          push "$REGISTRY/$IMAGE:${tag}"
         done
 
         # Size visibility: surface the built image size so bloat regressions show

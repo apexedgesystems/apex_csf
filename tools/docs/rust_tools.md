@@ -77,7 +77,7 @@ cargo run -p apex-analysis-tools --bin rdat_tool -- --help
 ## Testing
 
 ```bash
-make test-rust                        # cargo test --workspace
+make test-rust                        # every crate; ROLES=ops for one role
 cd tools && cargo test -p apex-tprm   # one crate
 ```
 

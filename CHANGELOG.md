@@ -71,6 +71,12 @@ any such change is called out explicitly in its entry.
 
 ### Changed
 
+- CI runs a tool change's own role and rebuilds an image only for what the
+  change bakes into it; `make test-rust` and `make clippy` take `ROLES=`
+  ([#198](https://github.com/apexedgesystems/apex_csf/pull/198)).
+- The CI lint job runs in its own image, `apex.lint`: the format and
+  secret-scan tools with no compiler toolchain
+  ([#198](https://github.com/apexedgesystems/apex_csf/pull/198)).
 - Thread pool workers count their in-flight tasks per worker, and the two
   pools share `PoolBase` (`PoolBase.hpp` now holds `PoolStatus`, `TaskError`
   and `PoolConfig`; the pool headers still provide them). Queued tasks drain
