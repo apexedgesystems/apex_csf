@@ -591,7 +591,8 @@ inline TransientStatus TransientSolver::stepDual(double dt, int stateIdx, Transi
 
   // Check if we have a valid cache for this state
   const double FACTOR = companions_.conductanceFactor(dt, method_);
-  if (dualFactorizedWs_[stateIdx].isFactorized() && std::fabs(dt - dualCachedDt_) < 1e-15 * dt &&
+  if (dualFactorizedWs_[stateIdx].isFactorized() &&
+      std::fabs(dt - dualCachedDt_[stateIdx]) < 1e-15 * dt &&
       FACTOR == dualCachedFactor_[stateIdx]) {
     return solveDualCachedStep(dt, stateIdx, state);
   }
@@ -602,7 +603,7 @@ inline TransientStatus TransientSolver::stepDual(double dt, int stateIdx, Transi
     return solveStep(dt, state);
   }
 
-  dualCachedDt_ = dt;
+  dualCachedDt_[stateIdx] = dt;
   dualCachedFactor_[stateIdx] = FACTOR;
   return solveDualCachedStep(dt, stateIdx, state);
 }

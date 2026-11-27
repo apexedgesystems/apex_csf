@@ -197,3 +197,90 @@ TEST(TransientSteppingTest, RunWithMoreVoltageSourcesThanTheRoomSetAside) {
   EXPECT_EQ(RESULT.stepsTaken, 100U);
   EXPECT_NEAR(RESULT.finalState.voltage(MANY_SOURCES + 1), 1.0, 1e-9);
 }
+
+/* ----------------------------- Two-State Factors ----------------------------- */
+
+namespace {
+
+/** @brief The RC with a load on the capacitor that a flag switches in. */
+void buildLoadedRc(TransientSolver& solver, const bool* loaded) {
+  solver.companions().addCapacitor(2, 0, 1e-6);
+  solver.setStampCallback([loaded](MnaSystem& mna, double /*seconds*/) {
+    mna.addVoltageSource(1, 0, 5.0);
+    mna.addConductance(1, 2, 1e-3);
+    if (*loaded) {
+      mna.addConductance(2, 0, 1e-3);
+    }
+  });
+}
+
+/** @brief A solver stepped by stepDual beside one stepped plainly, on the same circuit. */
+struct DualBesidePlain {
+  bool loaded = false;
+  TransientSolver dual{3};
+  TransientSolver plain{3};
+  TransientState dualState;
+  TransientState plainState;
+
+  DualBesidePlain() {
+    buildLoadedRc(dual, &loaded);
+    buildLoadedRc(plain, &loaded);
+    dual.setDualLU(true);
+    dualState.resize(3, 1);
+    plainState.resize(3, 1);
+  }
+
+  /** @brief One step in each solver, in the given state; the two capacitor voltages equal. */
+  void step(double dt, int state) {
+    ASSERT_EQ(dual.stepDual(dt, state, dualState), TransientStatus::SUCCESS);
+    ASSERT_EQ(plain.step(dt, plainState), TransientStatus::SUCCESS);
+    ASSERT_NEAR(dualState.voltage(2), plainState.voltage(2), 1e-12)
+        << "state " << state << ", step of " << dt << " s, at " << plainState.time << " s";
+  }
+};
+
+} // namespace
+
+/**
+ * @test Each state's kept factors serve the step length they were built for.
+ *
+ * Both states stamp the same circuit. After steps of 10 us in each, steps of
+ * 100 us follow: the first state factorizes for them, and the second has its
+ * own factors of 10 us still.
+ */
+TEST(TransientSteppingTest, EachDualStateKeepsItsOwnStepLength) {
+  DualBesidePlain pair;
+  for (int k = 0; k < 4; ++k) {
+    pair.step(10e-6, k % 2);
+    if (::testing::Test::HasFatalFailure()) {
+      return;
+    }
+  }
+  for (int k = 0; k < 6; ++k) {
+    pair.step(100e-6, k % 2);
+    if (::testing::Test::HasFatalFailure()) {
+      return;
+    }
+  }
+}
+
+/** @test invalidateCache() drops both states' factors: a changed circuit is solved as it is. */
+TEST(TransientSteppingTest, InvalidateCacheDropsTheDualFactors) {
+  DualBesidePlain pair;
+  for (int k = 0; k < 4; ++k) {
+    pair.step(10e-6, k % 2);
+    if (::testing::Test::HasFatalFailure()) {
+      return;
+    }
+  }
+  pair.loaded = true;
+  pair.dual.invalidateCache();
+  for (int k = 0; k < 200; ++k) {
+    pair.step(10e-6, k % 2);
+    if (::testing::Test::HasFatalFailure()) {
+      return;
+    }
+  }
+  // Half the supply across the equal resistors, the time constant halved.
+  EXPECT_NEAR(pair.dualState.voltage(2), 2.5, 0.1);
+}

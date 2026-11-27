@@ -268,7 +268,7 @@ private:
   // Dual-LU caching for alternating topology (clock HIGH/LOW)
   MnaFactorizedWorkspace dualFactorizedWs_[2]; // [0]=state0, [1]=state1
   std::unique_ptr<MnaSystem> dualCachedMna_[2];
-  double dualCachedDt_ = 0.0;
+  double dualCachedDt_[2] = {0.0, 0.0};     ///< Step length of each state's factors.
   double dualCachedFactor_[2] = {0.0, 0.0}; ///< Conductance factor of each state's factors.
   bool useDualLU_ = false;
 
@@ -367,15 +367,20 @@ public:
   void setCachedLU(bool enable) noexcept { useCachedLU_ = enable; }
 
   /**
-   * @brief Invalidate cached LU factorization.
+   * @brief Invalidate every kept factorization: dense, both states of the
+   *        two-state cache, and sparse.
    *
    * Call this if circuit topology changes (e.g., switch opens/closes).
-   * The next step will re-factorize the matrix.
+   * The next step of each kind will re-factorize the matrix.
    * @note RT-safe: resets scalar fields only.
    */
   void invalidateCache() noexcept {
     factorizedWs_.invalidate();
     cachedDt_ = 0.0;
+    for (int state = 0; state < 2; ++state) {
+      dualFactorizedWs_[state].invalidate();
+      dualCachedDt_[state] = 0.0;
+    }
     sparseCacheValid_ = false;
   }
 
