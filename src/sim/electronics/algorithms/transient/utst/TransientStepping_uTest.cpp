@@ -582,3 +582,43 @@ TEST(TransientSteppingTest, RefusedStepUndoesWhatThePreBatchCallbackWrote) {
   EXPECT_DOUBLE_EQ(solver.time(), 1e-6);
   EXPECT_NE(solver.prevVoltages()[1], 0.0);
 }
+
+/**
+ * @test Two-state factors built with one voltage source are not used for a
+ *       circuit with two: the step is taken through a new factorization.
+ *
+ * Net 3 hangs on the capacitor's net through 1 kohm; a flag puts 2 V on it.
+ * invalidateCache() is not called.
+ */
+TEST(TransientSteppingTest, DualFactorsOfAnotherSourceCountAreNotUsed) {
+  bool second = false;
+  const auto BUILD = [&second](TransientSolver& solver) {
+    solver.companions().addCapacitor(2, 0, 1e-6);
+    solver.setStampCallback([&second](MnaSystem& mna, double /*seconds*/) {
+      mna.addVoltageSource(1, 0, 5.0);
+      mna.addConductance(1, 2, 1e-3);
+      mna.addConductance(3, 2, 1e-3);
+      if (second) {
+        mna.addVoltageSource(3, 0, 2.0);
+      }
+    });
+  };
+  TransientSolver dual(4);
+  TransientSolver plain(4);
+  BUILD(dual);
+  BUILD(plain);
+  dual.setDualLU(true);
+  TransientState dualState;
+  TransientState plainState;
+  dualState.resize(4, 2);
+  plainState.resize(4, 2);
+
+  for (int k = 0; k < 8; ++k) {
+    second = k >= 4;
+    ASSERT_EQ(dual.stepDual(10e-6, k % 2, dualState), TransientStatus::SUCCESS) << "step " << k;
+    ASSERT_EQ(plain.step(10e-6, plainState), TransientStatus::SUCCESS) << "step " << k;
+    ASSERT_NEAR(dualState.voltage(2), plainState.voltage(2), 1e-12) << "step " << k;
+    ASSERT_NEAR(dualState.voltage(3), plainState.voltage(3), 1e-12) << "step " << k;
+  }
+  EXPECT_NEAR(dualState.voltage(3), 2.0, 1e-12);
+}

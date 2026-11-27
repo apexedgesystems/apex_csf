@@ -669,6 +669,14 @@ inline TransientStatus TransientSolver::solveDualCachedStep(double dt, int state
 
   companions_.stampAll(mna, dt, method_);
 
+  // Factors of another dimension are another circuit's: a voltage source
+  // was added or removed since they were built. They are dropped and the
+  // step is taken through a factorization of what is stamped now.
+  if (netCount_ + mna.voltageSourceCount() != ws.dim) {
+    ws.invalidate();
+    return stepDual(dt, stateIdx, state);
+  }
+
   // Ensure output arrays are sized
   if (state.nodeVoltages.size() < netCount_) {
     state.nodeVoltages.resize(netCount_);

@@ -260,7 +260,6 @@ private:
 
   // Cached LU optimization (disabled by default - enable for constant-topology circuits)
   MnaFactorizedWorkspace factorizedWs_;
-  std::unique_ptr<MnaSystem> cachedMna_;
   double cachedDt_ = 0.0;
   double cachedFactor_ = 0.0; ///< Companions' conductance factor the cached factors hold.
   bool useCachedLU_ = false;  // Disabled by default (enable for constant topology)
