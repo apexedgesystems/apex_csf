@@ -184,6 +184,8 @@ help:
 	@printf '  %-28s %s\n' "make check-data-db-contract" "Assert check-data-db's verdicts on fixture manifests"
 	@printf '  %-28s %s\n' "make check-manifest-headers" "Assert one generated TU per lib.manifest header on a fixture"
 	@printf '  %-28s %s\n' "make check-bundle-packaging" "Assert what a bundle carries and refuses on a fixture"
+	@printf '  %-28s %s\n' "make check-ci-classify" "Assert which CI jobs a set of changed paths selects"
+	@printf '  %-28s %s\n' "make check-ci-crates" "Assert the CI role rules cover the Rust crate graph"
 	@printf '  %-28s %s\n' "make apex-data-db" "Generate JSON struct dictionaries"
 	@printf '  %-28s %s\n' "make tprm-templates" "Generate TOML templates for tunable params"
 	@printf '  %-28s %s\n' "make ops-deck" "Generate consolidated cmd/tlm deck"

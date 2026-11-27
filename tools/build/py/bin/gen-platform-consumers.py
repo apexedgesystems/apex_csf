@@ -122,11 +122,14 @@ def gen_cicache(rows):
         if svc == "base":
             out.append("        # dev-base shares build-base's lower half; reuse those layers too.")
             out.append("        - ${REGISTRY}/apex.build-base:latest")
+            out.append("        # It copies its format tools from the lint stage.")
+            out.append("        - ${REGISTRY}/apex.lint:latest")
         out.append("      cache_to: *inline-cache")
         out.append("")
 
     entry("base", "apex.base")
     entry("build-base", "apex.build-base")
+    entry("lint", "apex.lint")
     entry("dev", "apex.dev.cpu")
     entry("dev-cuda", "apex.dev.cuda")
     entry("cuda-build", "apex.cuda-build")
@@ -146,14 +149,16 @@ def gen_graph(rows):
     ind = " " * 10
     out = [
         f"{ind}# image | compose-service | parent-image | tier | dockerfile",
-        f"{ind}# apex.base and apex.build-base are two targets of base.Dockerfile, so",
-        f"{ind}# a base.Dockerfile change rebuilds both (and cascades to their",
-        f"{ind}# children). apex.cuda-build is the lean CUDA tier on build-base,",
+        f"{ind}# apex.base, apex.build-base and apex.lint are three targets of",
+        f"{ind}# base.Dockerfile, so a base.Dockerfile change rebuilds all three (and",
+        f"{ind}# cascades to their children; apex.lint has none). apex.cuda-build is",
+        f"{ind}# the lean CUDA tier on build-base,",
         f"{ind}# sharing cuda.Dockerfile with apex.dev.cuda; apex.build.jetson is its",
         f"{ind}# jetson child. Leaf rows derive from mk/platforms.mk (ROLE != skeleton).",
         f'{ind}GRAPH="',
         f"{ind}apex.base|base||0|docker/base.Dockerfile",
         f"{ind}apex.build-base|build-base||0|docker/base.Dockerfile",
+        f"{ind}apex.lint|lint||0|docker/base.Dockerfile",
         f"{ind}apex.dev.cpu|dev|apex.base|1|docker/dev/cpu.Dockerfile",
         f"{ind}apex.dev.cuda|dev-cuda|apex.base|1|docker/dev/cuda.Dockerfile",
         f"{ind}apex.cuda-build|cuda-build|apex.build-base|1|docker/dev/cuda.Dockerfile",

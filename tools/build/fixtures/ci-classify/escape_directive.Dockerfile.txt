@@ -1,0 +1,9 @@
+# Escape = `
+# Not an image anyone builds: the directive above makes the backtick the
+# continuation character, so the COPY below takes two files. ci-classify.py
+# joins lines on a backslash only and has to refuse the file at its first
+# line. cases.txt names this file under @refused. It is named .txt because the
+# Dockerfile linter does not read the backtick continuation either.
+FROM scratch AS bakes
+COPY fixture/escape/first.bin `
+     fixture/escape/second.bin /tmp/

@@ -42,6 +42,9 @@ endef
 # tools/CMakeLists.txt). Executables land in bin/tools/<role>; the apex build
 # itself depends on tools-build alone.
 TOOL_ROLES := build ops analysis
+# The roles a by-role target covers (test-rust, clippy): every role unless
+# the caller narrows it, as in `make test-rust ROLES=ops`.
+ROLES ?= $(TOOL_ROLES)
 
 $(foreach r,$(TOOL_ROLES),$(eval $(call _tool_build,$(r),$(r))))
 
@@ -235,9 +238,14 @@ static: prep
 # the rust counterpart of clang-tidy's WarningsAsErrors gate. Deterministic:
 # the clippy version is pinned by the image toolchain, so a finding is a code
 # change, never rule drift. Runs on the PR rust job and nightly.
+# ROLES narrows it to the crates of those roles (default: every role).
 clippy:
-	$(call log,clippy,Running clippy -- deny warnings)
-	@cd tools && cargo clippy --workspace --all-targets --locked -- -D warnings
+	$(call log,clippy,Running clippy -- deny warnings ($(ROLES)))
+	@cd tools && for role in $(ROLES); do \
+	  for manifest in "$$role"/rust/*/Cargo.toml; do \
+	    cargo clippy --manifest-path "$$manifest" --all-targets --locked -- -D warnings || exit 1; \
+	  done; \
+	done
 
 # cppcheck: an independent static-analysis engine that catches different defects
 # than clang-tidy (warning/style/performance/portability). Advisory for now --

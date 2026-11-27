@@ -99,24 +99,16 @@ def tree_size(paths):
     return sum(os.path.getsize(p) for p in paths if os.path.isfile(p))
 
 
-# Staged tools and their launchers are run by whoever operates the
-# deployment: readable and executable by all, writable by their owner
-# alone. The mode is set here and not taken from the build tree, so a
-# package does not depend on the builder's umask.
-EXECUTABLE_MODE = 0o755
-
-
-def make_executable(path):
-    # The scanner's rule holds every mode wider than 0o644 to be too wide;
-    # a file that is to be executed needs its execute bits.
-    # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
-    os.chmod(path, EXECUTABLE_MODE)
+# A package is unpacked and run by users other than the one who built it: its executables are
+# readable and runnable by all and writable by the owner alone, whatever the builder's umask.
+PACKAGED_EXECUTABLE_MODE = 0o755
 
 
 def copy_executable(src, dst):
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     shutil.copyfile(src, dst)
-    make_executable(dst)
+    # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
+    os.chmod(dst, PACKAGED_EXECUTABLE_MODE)
 
 
 def normalize(name):
@@ -563,7 +555,8 @@ def write_launcher(dest, tool, needs, commands, run):
             "done\n"
             'exec %s "$@"\n' % (tool, needs, " ".join(commands), tool, needs, run)
         )
-    make_executable(launcher)
+    # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
+    os.chmod(launcher, PACKAGED_EXECUTABLE_MODE)
     return launcher
 
 

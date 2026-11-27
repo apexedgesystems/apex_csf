@@ -4,14 +4,25 @@
 # Change-scoped: a "changes" job classifies the PR diff, and the expensive jobs
 # run only when their area changed. A Rust or Python workspace change (e.g. a
 # Dependabot bump) does not rebuild the C++/CUDA surface; a docs-only change
-# runs lint alone. Scope-down is opt-in per known subtree: cross-cutting paths
-# (.github/, mk/, docker/, the CMake build files) and any unrecognized path run
-# the full suite, so a missed filter never silently drops coverage.
+# runs lint alone. Tools are scoped by role: a build-role change runs what the
+# C++ build stands on (that role's Rust tests, the spec/.auto pin, the
+# dictionary gate); an ops or analysis change runs that role's suites together
+# (for ops: its Rust tests, the shell smoke and the Python suite, which holds
+# the target-generation tests) and none of those. Scope-down is opt-in per
+# known subtree: cross-cutting paths (.github/, mk/, docker/, the CMake build
+# files) and any unrecognized path run the full suite, so a missed filter
+# never silently drops coverage.
 #
 # Image strategy (see .github/actions/dev-setup): jobs pull the registry
-# :latest dev image, which docker-images.yml keeps current with main. When the
-# PR itself changes docker/, the affected image is rebuilt from the Dockerfiles
-# instead so tests run against the PR's intended image.
+# :latest image, which docker-images.yml keeps current with main. When the PR
+# changes what an image is built from, the jobs that use that part rebuild it
+# from the Dockerfiles instead, so tests run against the PR's intended image:
+# every job for an image's own definition or for a change to how CI builds
+# images (the setup action, the registry-cache overlay), and for a baked
+# dependency only the jobs that build with it (the Python lock rebuilds for
+# the Python tests alone; lint uses no bake). Lint has an image of its own
+# (apex.lint: the format and secret-scan tools, no compiler toolchain), so
+# its rebuild is that one stage.
 #
 # The build/test/smoke/docs chain runs in dev-cuda so the .cu surface is compile
 # and link verified; docker-compose.ci.yml drops the GPU reservation so it
@@ -42,10 +53,14 @@ jobs:
     timeout-minutes: 5
     outputs:
       cpp: ${{ steps.f.outputs.cpp }}
-      rust: ${{ steps.f.outputs.rust }}
+      rust_build: ${{ steps.f.outputs.rust_build }}
+      rust_roles: ${{ steps.f.outputs.rust_roles }}
       py: ${{ steps.f.outputs.py }}
       sh: ${{ steps.f.outputs.sh }}
-      docker: ${{ steps.f.outputs.docker }}
+      images: ${{ steps.f.outputs.images }}
+      bakes_gate: ${{ steps.f.outputs.bakes_gate }}
+      bakes_rust: ${{ steps.f.outputs.bakes_rust }}
+      bakes_py: ${{ steps.f.outputs.bakes_py }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -64,81 +79,27 @@ jobs:
           # rename detection would emit only the destination path.
           files=$(git diff --name-only --no-renames "origin/$base...HEAD")
           printf 'changed files:\n%s\n' "$files"
-          # Scope DOWN only for changes confined to known-isolated areas; any
-          # unrecognized path (root configs, new top-level dirs, build/CI infra)
-          # falls through to the full suite, so coverage is never silently lost.
-          cpp=false; rust=false; py=false; sh=false; allflag=false
-          while IFS= read -r file; do
-            [ -z "$file" ] && continue
-            case "$file" in
-              tools/Cargo.*|tools/*/rust/*) rust=true ;;
-              tools/build/py/bin/*) : ;;
-              tools/pyproject.toml|tools/uv.lock|tools/*/py/*) py=true ;;
-              # A demo's checkout scripts keep their pytest files beside them;
-              # make test-py collects those directories with the members' own
-              # tests, so a change there selects the Python job.
-              demos/*/test/*.py|demos/*/*/test/*.py) py=true ;;
-              tools/ops/sh/*) sh=true ;;
-              # Conformance contracts are multi-sided: every suite that pins
-              # one must run when it changes.
-              compat/tprm/*) cpp=true; rust=true ;;
-              # Component specs and their committed .auto headers are pinned
-              # against each other by check-cdef, which runs in the rust job
-              # (it needs cdef_gen); either side changing must run it.
-              *_data.toml|*/.auto/*) cpp=true; rust=true ;;
-              # A demo's Python scripts are tested by the Python job (beside
-              # them under the demo's test/, or in a member's tests), so a
-              # change to one runs that job as well as the demo's C++ selection.
-              demos/*/scripts/*.py|demos/*/*/scripts/*.py) cpp=true; py=true ;;
-              src/*|demos/*|apps/*|cmake/*|CMakeLists.txt|CMakePresets.json) cpp=true ;;
-              *.md|docs/*)  : ;;
-              # Dev-image inputs the gate jobs actually run in (base; the cpu dev
-              # image used by lint/static; the cuda image used by build-test) plus
-              # the base compose -- a change here can alter every build.
-              docker/base.Dockerfile|docker/dev/cpu.Dockerfile|docker/dev/cuda.Dockerfile|docker-compose.yml) allflag=true ;;
-              # The tools packager has an executed regression in the shell suite
-              # (every wheel shipped; a failed copy fails), so a change to it
-              # runs that job.
-              tools/build/sh/package-tools.sh) sh=true ;;
-              # Leaf cross/firmware images and the scripts they COPY are built and
-              # verified post-merge (docker-images.yml) + locally, and no gate job
-              # runs in them, so a change confined here needs only lint -- not the
-              # full C++/rust/py suite. (Lint always runs; it hadolints/shellchecks
-              # these.)
-              docker/dev/*|tools/build/sh/*) : ;;
-              .github/*|mk/*|docker/*|docker-compose*) allflag=true ;;
-              *)            allflag=true ;;
-            esac
-          done <<< "$files"
-          # An empty diff (e.g. a dispatch on main itself) classifies nothing
-          # and would yield a green lint-only run; treat it as cross-cutting so
-          # a manual run is always a full run. docker stays diff-driven -- an
-          # empty diff never forces an image rebuild.
-          if [ -z "$files" ]; then allflag=true; fi
-          if [ "$allflag" = true ]; then cpp=true; rust=true; py=true; sh=true; fi
-          # Rebuild only when a gate-image INPUT changes: the images a gate job
-          # runs in (base tiers, the cpu dev image, the cuda image, the base
-          # compose), or anything base.Dockerfile bakes -- the dependency
-          # manifests (tools/Cargo.*, tools/uv.lock|pyproject.toml and the member manifests,
-          # ExternalDependencies.cmake) and the baked scripts (tools/build/sh/, tools/build/py/bin/).
-          # Without the baked inputs the gate runs offline builds against STALE
-          # caches: a lock bump fails on missing crates/wheels, and a GIT_TAG
-          # bump silently builds the OLD baked source via the
-          # FETCHCONTENT_SOURCE_DIR redirect (green-but-wrong). Leaf
-          # cross/firmware Dockerfiles feed only post-merge images; builder/final
-          # feed the release pipe; CI compose overlays are runtime-only.
-          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/cpu\.Dockerfile$|^docker/dev/cuda\.Dockerfile$|^docker-compose\.yml$|^tools/build/sh/|^tools/build/py/bin/|^tools/Cargo\.(lock|toml)$|^tools/[^/]+/rust/[^/]+/Cargo\.toml$|^tools/(uv\.lock|pyproject\.toml)$|^tools/[^/]+/py/[^/]+/pyproject\.toml$|^ExternalDependencies\.cmake$' && echo true || echo false)
-          printf 'cpp=%s\nrust=%s\npy=%s\nsh=%s\ndocker=%s\n' "$cpp" "$rust" "$py" "$sh" "$docker" | tee -a "$GITHUB_OUTPUT"
+          # The decisions are ci-classify.py's (one rule table, checked by
+          # make check-ci-classify): which jobs the paths select, which roles'
+          # Rust tests, and which jobs rebuild their image. An empty diff (a
+          # dispatch on main itself) selects every job and rebuilds nothing.
+          # Its output is captured before it is written: a classifier that
+          # fails stops this step with its status, where a pipeline into tee
+          # would report tee's and leave every decision empty, which skips
+          # the jobs that read them.
+          decisions=$(printf '%s\n' "$files" | python3 tools/build/py/bin/ci-classify.py)
+          printf '%s\n' "$decisions" | tee -a "$GITHUB_OUTPUT"
 
   lint:
     name: Lint and secret scan
     needs: changes
     runs-on: ubuntu-24.04
-    # Rebuild-path headroom: when the PR changes image inputs, dev-setup
-    # rebuilds dev-base here, and a low-cache-overlap rebuild runs ~19 min
-    # before the checks even start (a 20-minute cap made it a runner-speed
-    # coin flip). Pull-path runs still finish in minutes.
-    timeout-minutes: 40
+    # Runs in the lint image: pre-commit, the tools its hooks call and
+    # gitleaks, with no compiler toolchain and no baked dependency. It is
+    # rebuilt only when an image definition changed (`images`), and that
+    # rebuild is of the lint stage alone, so a lock bump leaves the job on
+    # the pulled image and a Dockerfile change costs it one small stage.
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -150,18 +111,20 @@ jobs:
         run: make check-release-paths
       - name: Check platform consumers match the registry
         run: make check-platforms
-      - name: Set up dev image
+      - name: Check the change classifier against its cases
+        run: make check-ci-classify
+      - name: Set up lint image
         uses: ./.github/actions/dev-setup
         with:
           registry: ${{ env.REGISTRY }}
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          service: dev
-          rebuild: ${{ needs.changes.outputs.docker }}
+          service: lint
+          rebuild: ${{ needs.changes.outputs.images }}
       - name: Format check
-        run: docker compose run --rm -T dev make format-check
+        run: docker compose run --rm -T lint make format-check
       - name: Secret scan (gitleaks)
-        run: docker compose run --rm -T dev make gitleaks
+        run: docker compose run --rm -T lint make gitleaks
 
   build-test:
     name: Build and test (CUDA)
@@ -190,7 +153,7 @@ jobs:
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
           service: cuda-build
-          rebuild: ${{ needs.changes.outputs.docker }}
+          rebuild: ${{ needs.changes.outputs.images == 'true' || needs.changes.outputs.bakes_gate == 'true' }}
       # Second restore key: the nightly debug leg saves main-scoped entries,
       # the only ones a brand-new PR's first push can see (ccache is
       # content-addressed, so a partial-match cache only helps, never hurts).
@@ -219,9 +182,13 @@ jobs:
   rust:
     name: Rust tool tests
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    # One job for whichever roles' crates the change can break, so an ops or
+    # analysis change tests its own crates and nothing of the build role.
+    if: needs.changes.outputs.rust_roles != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      ROLES: ${{ needs.changes.outputs.rust_roles }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -234,29 +201,32 @@ jobs:
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
           service: build-base
-          rebuild: ${{ needs.changes.outputs.docker }}
+          rebuild: ${{ needs.changes.outputs.images == 'true' || needs.changes.outputs.bakes_rust == 'true' }}
       - name: Run Rust tests
-        run: docker compose run --rm -T build-base make test-rust
+        run: docker compose run --rm -T build-base make test-rust ROLES="$ROLES"
       # Deny-all-warnings: the rust counterpart of clang-tidy's
       # warnings-as-errors. Deterministic -- clippy's version is pinned by the
       # image, so a finding here is a code change, never rule drift.
       - name: Rust static analysis (clippy)
-        run: docker compose run --rm -T build-base make clippy
+        run: docker compose run --rm -T build-base make clippy ROLES="$ROLES"
       # Committed .auto headers must be byte-identical to what cdef_gen
       # emits from their specs -- a hand edit or a stale header after a
-      # spec (or generator) change cannot merge.
+      # spec (or generator) change cannot merge. cdef_gen is a build-role
+      # tool, and the specs and headers select that role.
       - name: Spec/.auto pin (check-cdef)
+        if: needs.changes.outputs.rust_build == 'true'
         run: docker compose run --rm -T build-base make check-cdef
 
   data-db:
     name: Dictionaries generate
     needs: changes
     # The dictionary generator reads component manifests and .auto headers
-    # (classified rust), the C++ headers and CMake registrations under the
-    # component trees (cpp), and runs through the Rust generator (rust).
-    # Any of them can break a dictionary ground tooling regenerates from,
-    # so the gate runs for either, on the smallest image.
-    if: needs.changes.outputs.cpp == 'true' || needs.changes.outputs.rust == 'true'
+    # (classified rust_build), the C++ headers and CMake registrations under
+    # the component trees (cpp), and runs through the build role's Rust
+    # generator (rust_build). Any of them can break a dictionary ground
+    # tooling regenerates from, so the gate runs for either, on the smallest
+    # image. The ops and analysis crates are not in its path.
+    if: needs.changes.outputs.cpp == 'true' || needs.changes.outputs.rust_build == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -271,7 +241,7 @@ jobs:
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
           service: build-base
-          rebuild: ${{ needs.changes.outputs.docker }}
+          rebuild: ${{ needs.changes.outputs.images == 'true' || needs.changes.outputs.bakes_gate == 'true' }}
       - name: Dictionaries generate (check-data-db)
         run: docker compose run --rm -T build-base make check-data-db
       # The gate stands on the helper's explicit-path error and its own
@@ -298,7 +268,7 @@ jobs:
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
           service: build-base
-          rebuild: ${{ needs.changes.outputs.docker }}
+          rebuild: ${{ needs.changes.outputs.images == 'true' || needs.changes.outputs.bakes_py == 'true' }}
       - name: Run Python tests
         run: docker compose run --rm -T build-base make test-py
 
@@ -335,7 +305,7 @@ jobs:
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
           service: build-base
-          rebuild: ${{ needs.changes.outputs.docker }}
+          rebuild: ${{ needs.changes.outputs.images == 'true' || needs.changes.outputs.bakes_gate == 'true' }}
       - name: Restore ccache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -377,7 +347,7 @@ jobs:
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
           service: dev-cuda
-          rebuild: ${{ needs.changes.outputs.docker }}
+          rebuild: ${{ needs.changes.outputs.images == 'true' || needs.changes.outputs.bakes_gate == 'true' }}
       # No ccache here: clang-tidy does not compile through the launcher --
       # every cache this job ever saved was ~191 bytes (see CHECKS_CCACHE in
       # mk/checks.mk for the same rule on nightly legs).
@@ -407,20 +377,28 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CPP: ${{ needs.changes.outputs.cpp }}
-          RUST: ${{ needs.changes.outputs.rust }}
+          RUST: ${{ needs.changes.outputs.rust_roles }}
           PY: ${{ needs.changes.outputs.py }}
-          DOCKER: ${{ needs.changes.outputs.docker }}
+          IMAGES: ${{ needs.changes.outputs.images }}
+          BAKES_GATE: ${{ needs.changes.outputs.bakes_gate }}
+          BAKES_RUST: ${{ needs.changes.outputs.bakes_rust }}
+          BAKES_PY: ${{ needs.changes.outputs.bakes_py }}
         run: |
           scope="scoped"
-          [ "$CPP$RUST$PY" = "truetruetrue" ] && scope="full"
+          [ "$CPP|$RUST|$PY" = "true|build ops analysis|true" ] && scope="full"
+          baked=""
+          [ "$BAKES_GATE" = "true" ] && baked="$baked the C++ jobs and the dictionary gate,"
+          [ "$BAKES_RUST" = "true" ] && baked="$baked the Rust tests,"
+          [ "$BAKES_PY" = "true" ] && baked="$baked the Python tests,"
           images="pulled"
-          [ "$DOCKER" = "true" ] && images="rebuilt (image inputs changed)"
-          echo "::notice title=CI scope::suite=$scope (cpp=$CPP rust=$RUST py=$PY); gate images $images"
+          [ -n "$baked" ] && images="rebuilt for their baked dependencies by${baked%,}; pulled by the rest"
+          [ "$IMAGES" = "true" ] && images="rebuilt (an image definition changed)"
+          echo "::notice title=CI scope::suite=$scope (cpp=$CPP rust=[$RUST] py=$PY); images $images"
           {
             echo "## CI run report"
             echo ""
-            echo "- **Suite**: $scope (cpp=$CPP, rust=$RUST, py=$PY)"
-            echo "- **Gate images**: $images"
+            echo "- **Suite**: $scope (cpp=$CPP, rust=[$RUST], py=$PY)"
+            echo "- **Images**: $images"
             echo ""
             echo "| Job | Result | Duration |"
             echo "|---|---|---|"

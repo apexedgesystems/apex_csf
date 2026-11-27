@@ -7,6 +7,7 @@
 
 #include "src/sim/electronics/algorithms/mna/inc/Types.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <vector>
@@ -194,15 +195,37 @@ public:
   /**
    * @brief Clear all stamps for reuse.
    *
-   * Resets G matrix to zeros, I vector to zeros, and clears voltage sources.
+   * Zeroes whatever the conductance stamps went into, the I vector, and
+   * clears voltage sources:
+   * - the G matrix;
+   * - in external-matrix mode the whole external matrix (augDim x augDim),
+   *   which after a solve holds the augmentation and the factors as well;
+   * - in matvec mode the first netCount entries of the output, which are
+   *   the entries stamps accumulate into.
    * Does not deallocate memory - just resets values.
    *
    * @note RT-safe: no allocation, just memset-like operations.
    */
   void clear() noexcept {
     std::fill(G_.begin(), G_.end(), 0.0);
+    if (extA_ != nullptr) {
+      std::fill_n(extA_, extDim_ * extDim_, 0.0);
+    }
+    if (matvecAx_ != nullptr) {
+      std::fill_n(matvecAx_, netCount_, 0.0);
+    }
     std::fill(I_.begin(), I_.end(), 0.0);
     vsources_.clear();
+  }
+
+  /**
+   * @brief Check if conductances are stamped into the context's own G matrix.
+   *
+   * False in external-matrix and matvec modes, where g() is empty.
+   * @note RT-safe.
+   */
+  [[nodiscard]] bool hasOwnMatrix() const noexcept {
+    return extA_ == nullptr && MATVEC_X_ == nullptr;
   }
 
   /**
@@ -210,6 +233,12 @@ public:
    * @note RT-safe.
    */
   [[nodiscard]] bool hasExternalMatrix() const noexcept { return extA_ != nullptr; }
+
+  /**
+   * @brief Get the external matrix stamped into (null in the other modes).
+   * @note RT-safe.
+   */
+  [[nodiscard]] const double* externalMatrix() const noexcept { return extA_; }
 
   /**
    * @brief Get external matrix leading dimension.

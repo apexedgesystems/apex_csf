@@ -1,0 +1,265 @@
+# ci-classify.py's contract: for a set of changed paths, the decisions that
+# must be true. One case per line: <decisions> | <paths>, `-` for none.
+# Run by `make check-ci-classify`.
+
+# --- nothing to run but lint ---------------------------------------------------
+-                       | README.md
+-                       | docs/architecture/overview.rst
+-                       | tools/README.md
+-                       | tools/docs/rust_workspace.md
+
+# --- C++ -----------------------------------------------------------------------
+cpp                     | src/system/core/executive/posix/src/ApexExecutive.cpp
+cpp                     | demos/apex_hil_demo/exec/src/main.cpp
+cpp                     | apps/template_app/exec/CMakeLists.txt
+cpp                     | cmake/apex/Packaging.cmake
+cpp                     | CMakeLists.txt
+cpp                     | CMakePresets.json
+# A path is judged by the first rule it meets: a README under src/ is a src/
+# path before it is a Markdown file.
+cpp                     | src/system/core/executive/README.md
+
+# --- contracts with more than one side -------------------------------------------
+cpp rust_build          | compat/tprm/vectors/basic.toml
+cpp rust_build          | src/sim/models/foo/foo_data.toml
+cpp rust_build          | src/sim/models/foo/inc/.auto/FooData.hpp
+
+# --- the build role: what the C++ build and the dictionary gate stand on ---------
+rust_build              | tools/build/rust/apex-build-tools/src/bin/cfg2bin.rs
+rust_build              | tools/build/rust/apex-build-tools/Cargo.toml
+rust_build              | tools/build/proto/apex/options.proto
+rust_build              | tools/build/fixtures/check-data-db/valid/apex_data.toml
+# The TPRM library is linked by the ops crate too.
+rust_build rust_ops     | tools/build/rust/apex-tprm/src/lib.rs
+rust_build rust_ops     | tools/build/rust/apex-tprm/Cargo.toml
+
+# --- the ops role: its suites together, and none of the gates --------------------
+# A crate, a package or a script each runs the ops Rust tests, the shell smoke
+# and the Python suite, which holds the target-generation tests.
+rust_ops py sh          | tools/ops/rust/apex-ops-tools/src/bin/upx_tool.rs
+rust_ops py sh          | tools/ops/rust/apex-ops-tools/Cargo.toml
+rust_ops py sh          | tools/ops/py/apex_ops/src/apex_ops/client.py
+rust_ops py sh          | tools/ops/py/apex_ops/src/apex_ops/target_gen.py
+rust_ops py sh          | tools/ops/py/apex_ops/tests/test_ops_target_gen.py
+rust_ops py sh          | tools/ops/sh/bin/ops_sdk_package.sh
+# A path under the role that selects no job of its own selects none of the role's.
+-                       | tools/ops/README.md
+
+# --- the analysis role: its suites together, and none of the gates ---------------
+rust_analysis py        | tools/analysis/rust/apex-analysis-tools/src/bin/rdat_tool.rs
+rust_analysis py        | tools/analysis/rust/apex-analysis-tools/Cargo.toml
+rust_analysis py        | tools/analysis/py/apex_analysis/tests/test_plot.py
+-                       | tools/analysis/README.md
+# A C++ tool of any role is a target of the C++ build.
+cpp rust_analysis py    | tools/analysis/cpp/registry_info/src/registry-info.cpp
+cpp rust_ops py sh      | tools/ops/cpp/some_tool/src/main.cpp
+cpp                     | tools/build/cpp/some_tool/src/main.cpp
+# The Python and C++ rules span every role, a new one included; its suites do
+# not run together until ROLE_SUITES names it.
+py                      | tools/newrole/py/some_pkg/src/some_pkg/main.py
+cpp                     | tools/newrole/cpp/some_tool/src/main.cpp
+
+# --- the tools workspaces ----------------------------------------------------------
+rust_build rust_ops rust_analysis | tools/Cargo.toml
+py                      | demos/apex_action_demo/test/test_checkout_reader.py
+py                      | demos/apex_horizon_demo/rover_mcu/test/test_rover_ring_probe.py
+cpp py                  | demos/apex_hil_demo/scripts/checkout.py
+cpp py                  | demos/apex_horizon_demo/rover_mcu/scripts/upload_rts.py
+sh                      | tools/build/sh/package-tools.sh
+
+# --- the gate images' own definition: every job rebuilds its image -------------
+cpp rust_build rust_ops rust_analysis py sh images | docker/base.Dockerfile
+cpp rust_build rust_ops rust_analysis py sh images | docker/dev/cuda.Dockerfile
+cpp rust_build rust_ops rust_analysis py sh images | docker-compose.yml
+# How CI rebuilds them: the registry-cache overlay and the image setup action.
+cpp rust_build rust_ops rust_analysis py sh images | docker-compose.ci-cache.yml
+cpp rust_build rust_ops rust_analysis py sh images | .github/actions/dev-setup/action.yml
+
+# --- what base.Dockerfile's bakes stage copies: its consumers rebuild --------------
+# The Rust lock: everything that compiles a crate, the C++ jobs included.
+rust_build rust_ops rust_analysis bakes_gate bakes_rust | tools/Cargo.lock
+# The Python lock and manifests: the Python job alone rebuilds. A member's
+# manifest runs its role's other suites, which install nothing from it.
+py bakes_py             | tools/uv.lock
+py bakes_py             | tools/pyproject.toml
+rust_ops py sh bakes_py | tools/ops/py/apex_ops/pyproject.toml
+rust_analysis py bakes_py | tools/analysis/py/apex_analysis/pyproject.toml
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | ExternalDependencies.cmake
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | tools/build/sh/bake-external-deps.sh
+
+# A copied file is a path, not the start of a name.
+rust_build rust_ops rust_analysis | tools/Cargo.lock.orig
+
+# --- under tools/build, and no gate image copies it -------------------------------
+-                       | tools/build/py/bin/gen-platform-consumers.py
+-                       | tools/build/py/bin/ci-classify.py
+-                       | tools/build/fixtures/ci-classify/cases.txt
+-                       | tools/build/sh/setup-cross-toolchain.sh
+-                       | tools/build/sh/setup-sysroot.sh
+
+# --- images no gate job runs in: built after the merge ---------------------------
+# The CPU shell among them: lint has an image of its own, and the C++ jobs run
+# in the CUDA tiers.
+-                       | docker/dev/cpu.Dockerfile
+-                       | docker/dev/rpi.Dockerfile
+-                       | docker/dev/stm32.Dockerfile
+
+# --- build and CI infrastructure, and anything unknown: everything ---------------
+cpp rust_build rust_ops rust_analysis py sh | .github/workflows/ci.yml
+cpp rust_build rust_ops rust_analysis py sh | mk/test.mk
+cpp rust_build rust_ops rust_analysis py sh | docker/builder.Dockerfile
+cpp rust_build rust_ops rust_analysis py sh | docker-compose.ci.yml
+cpp rust_build rust_ops rust_analysis py sh | .github/actions/docker-build-push/action.yml
+cpp rust_build rust_ops rust_analysis py sh | .github/actions/reclaim-disk/action.yml
+cpp rust_build rust_ops rust_analysis py sh | Makefile
+cpp rust_build rust_ops rust_analysis py sh | tools/CMakeLists.txt
+cpp rust_build rust_ops rust_analysis py sh | some_new_top_level_dir/file.txt
+# A role or a language under tools/ that no rule names.
+cpp rust_build rust_ops rust_analysis py sh | tools/newrole/rust/some-crate/src/lib.rs
+cpp rust_build rust_ops rust_analysis py sh | tools/newrole/sh/bin/some_script.sh
+cpp rust_build rust_ops rust_analysis py sh | tools/ops/go/some-tool/main.go
+cpp rust_build rust_ops rust_analysis py sh | -
+
+# --- several paths: the union ----------------------------------------------------
+cpp rust_build rust_ops | README.md src/a.cpp tools/build/rust/apex-tprm/src/lib.rs
+rust_ops rust_analysis py sh | tools/ops/rust/apex-ops-tools/src/lib.rs tools/analysis/rust/apex-analysis-tools/src/lib.rs
+cpp rust_ops py sh      | cmake/apex/README.md cmake/apex/Packaging.cmake tools/ops/sh/bin/ops_sdk_package.sh tools/ops/py/apex_ops/src/apex_ops/target_gen.py
+cpp rust_build rust_ops rust_analysis py sh | docs/x.md tools/ops/rust/apex-ops-tools/Cargo.toml mk/release.mk
+rust_build rust_ops rust_analysis py bakes_gate bakes_rust bakes_py | tools/Cargo.lock tools/uv.lock
+# A lock outside the build role leaves the C++ jobs on their pulled images.
+cpp py bakes_py         | src/a.cpp tools/uv.lock
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust | src/a.cpp tools/Cargo.lock tools/ops/rust/apex-ops-tools/Cargo.toml
+cpp rust_build rust_ops rust_analysis py sh images bakes_gate bakes_rust | docker/base.Dockerfile tools/Cargo.lock
+
+# --- how a Dockerfile's copies are read (stages.Dockerfile is a fixture) ---------
+# Outside the bakes stage a copied file defines the image; in it, the bakes. A
+# directory is its content; a Cargo.toml and a COPY --from are not inputs. A
+# baked file rebuilds for the jobs its own rule selects (its role's other
+# suites do not install from it), and one whose path selects none (docs/
+# here) for every job that has a bake.
+@gates tools/build/fixtures/ci-classify/stages.Dockerfile
+cpp rust_build rust_ops rust_analysis py sh images | fixture/tool.sh
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/Cargo.lock
+cpp rust_build rust_ops rust_analysis py sh | fixture/Cargo.toml
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/assets/table.bin
+cpp rust_build rust_ops rust_analysis py sh | fixture/assets-other/table.bin
+cpp rust_build rust_ops rust_analysis py sh | opt/baked/file opt/other/file
+# The gate file itself defines the image; its path selects no job of its own.
+images                  | tools/build/fixtures/ci-classify/stages.Dockerfile
+cpp rust_build rust_ops rust_analysis py sh images bakes_gate bakes_rust bakes_py | fixture/tool.sh fixture/assets/a/b.bin
+bakes_gate bakes_rust bakes_py | docs/baked/table.bin
+rust_ops py sh bakes_rust | tools/ops/rust/baked.bin
+rust_ops py sh bakes_py | tools/ops/py/baked.bin
+cpp bakes_gate          | src/baked.bin
+rust_analysis py bakes_rust | tools/analysis/rust/baked.bin
+rust_analysis py bakes_py | tools/analysis/py/baked.bin
+# The shell smoke runs on the bare host: a baked file whose rule selects it
+# alone has no known consumer.
+rust_ops py sh bakes_gate bakes_rust bakes_py | tools/ops/sh/baked.bin
+# The ways a source may be written.
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/json/table.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/json/other.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/dot/table.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/rooted.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/tab.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/lower.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/onbuild.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/added.tar
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/continued.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/after-comment.bin
+cpp rust_build rust_ops rust_analysis py sh | fixture/commented.bin
+cpp rust_build rust_ops rust_analysis py sh | fixture/remote.tar
+# A source that is a directory is not touched by a file of its name's start.
+cpp rust_build rust_ops rust_analysis py sh | fixture/json
+# A wildcard matches within one path segment: a file, or a directory and so
+# its content.
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/glob/Cargo.lock
+cpp rust_build rust_ops rust_analysis py sh | fixture/glob/sub/Cargo.lock
+cpp rust_build rust_ops rust_analysis py sh | fixture/glob/Cargo.lock.orig
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/glob/a/table.bin
+cpp rust_build rust_ops rust_analysis py sh | fixture/glob/ab/table.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/glob/dir-x/deep/table.bin
+cpp rust_build rust_ops rust_analysis py sh | fixture/glob/other-x/deep/table.bin
+# An image that copies the whole repository is defined by every file in it.
+@gates tools/build/fixtures/ci-classify/whole_tree.Dockerfile
+images                  | README.md
+cpp images              | src/a.cpp
+cpp rust_build rust_ops rust_analysis py sh | -
+@gates
+
+# --- inputs in a form the reader does not read: each is refused ------------------
+@refused tools/build/fixtures/ci-classify/refused.Dockerfile
+# A file that changes the continuation character is refused whole, at its
+# directive.
+@refused tools/build/fixtures/ci-classify/escape_directive.Dockerfile.txt
+
+# --- how lines are put together, held to docker's parser --------------------------
+# Each case is the bytes of a whole Dockerfile on one line, written with
+# escapes (\n, \\ for one backslash, \t, \r, \xNN for any byte: \x23 the
+# comment sign, \x60 a backtick), and what it must be read as: `stage:path`
+# per source, `-` for none, or `refused:` and the line the refusal names.
+#
+# Two backslashes end a line: the RUN is whole and the COPY after it is read.
+@reader bakes:tools/uv.lock | FROM busybox AS bakes\nRUN true \\\\\nCOPY tools/uv.lock /tmp/\n
+@reader bakes:tools/uv.lock | FROM busybox AS bakes\nRUN true \\\\ \t\nCOPY tools/uv.lock /tmp/\n
+# One backslash continues, also with spaces or tabs after it and before a
+# carriage return and newline.
+@reader bakes:a.bin bakes:b.bin | FROM scratch AS bakes\n \tCOPY a.bin \\ \t\n     b.bin /tmp/\n
+@reader bakes:a.bin bakes:b.bin | FROM scratch AS bakes\r\nCOPY a.bin \\\r\n     b.bin /tmp/\r\n
+# A carriage return anywhere else is a space between two words, not a line's end.
+@reader bakes:a.bin bakes:b.bin | FROM scratch AS bakes\nCOPY a.bin\rb.bin /tmp/\n
+# Anything else after the backslash ends the line there (a form feed here).
+@reader bakes:b.bin     | FROM busybox AS bakes\nRUN true \\\x0c\nCOPY b.bin /tmp/\n
+# The next line is joined as written: no space comes between the two.
+@reader bakes:tools/uv.lock | FROM scratch AS bakes\nCOPY to\\\nols/uv.lock /tmp/\n
+# An empty line inside a continued instruction is skipped, like a comment.
+@reader bakes:a.bin bakes:b.bin | FROM scratch AS bakes\nCOPY a.bin \\\n\n  \t\n     \x23 c.bin\n     b.bin /tmp/\n
+# The file may end inside a continued instruction, with no newline.
+@reader bakes:a.bin     | FROM scratch AS bakes\nCOPY a.bin /tmp/ \\
+# A byte-order mark is dropped before the first line is read: the stage is
+# named, and a directive behind the mark is a directive.
+@reader bakes:a.bin     | \xef\xbb\xbfFROM scratch AS bakes\nCOPY a.bin /tmp/\n
+@reader refused:1       | \xef\xbb\xbf\x23 escape=\x60\nFROM scratch AS bakes\nCOPY a.bin \x60\n     b.bin /tmp/\n
+# A directive after anything else, an empty line included, is a comment.
+@reader :a.bin :b.bin   | \n\x23 escape=\x60\nFROM scratch\nCOPY a.bin \\\n     b.bin /tmp/\n
+# A refusal names the line its instruction starts on.
+@reader refused:4       | FROM scratch AS bakes\n\x23 comment\n\nCOPY a.bin \\\n     ${B} /tmp/\n
+
+# --- flags and sources docker reads another way: refused --------------------------
+# A quoted flag: docker takes the quotes off and keeps the space, so the
+# --from inside it is not a flag and the mount after it is one.
+@reader refused:2       | FROM scratch AS bakes\nCOPY --exclude="x --from=y" a.bin /tmp/\n
+@reader refused:2       | FROM scratch AS bakes\nCOPY --exclude='x --from=y' a.bin /tmp/\n
+@reader refused:2       | FROM busybox AS bakes\nRUN --mount=type=cache,target="/a b" --mount=type=bind,target=/src cp /src/a.bin /tmp/\n
+@reader refused:2       | FROM busybox AS bakes\nRUN --mount=type=b\\ind,target=/src cp /src/a.bin /tmp/\n
+# A bind mount of the repository however its type is spelled, or with a
+# `from` that names nothing; a cache mount spelled the same ways is no input.
+@reader refused:2       | FROM busybox AS bakes\nRUN --mount=type=BIND,target=/src cp /src/a.bin /tmp/\n
+@reader refused:2       | FROM busybox AS bakes\nRUN --mount=TYPE=bind,target=/src cp /src/a.bin /tmp/\n
+@reader refused:2       | FROM busybox AS bakes\nRUN --mount=type=bind,from=,target=/src cp /src/a.bin /tmp/\n
+@reader refused:3       | FROM busybox AS bakes\nARG KIND=bind\nRUN --mount=type=${KIND},target=/src cp /src/a.bin /tmp/\n
+@reader -               | FROM busybox AS bakes\nRUN --mount=TYPE=Cache,target=/var/cache/fixture --mount=type=bind,FROM=busybox,target=/mnt true\n
+# A space outside ASCII does not end a flag for docker (an em space here), so
+# the --from after it is part of the flag before it.
+@reader refused:2       | FROM scratch AS bakes\nCOPY --exclude=x\xe2\x80\x83--from=y a.bin /tmp/\n
+# A --from that names nothing takes from the repository; a here-document is
+# refused whatever comes before it.
+@reader bakes:a.bin     | FROM scratch AS bakes\nCOPY --from= a.bin /tmp/\n
+@reader refused:4       | FROM scratch AS other\nCOPY a.bin /a.bin\nFROM scratch\nCOPY --from=other <<END /tmp/inline.txt\nFROM scratch AS bakes\nEND\nCOPY b.bin /tmp/\n
+# A source with a colon that is not a URL docker fetches; a character outside
+# printable ASCII, written out or as a JSON escape; a byte that is not UTF-8.
+@reader -               | FROM scratch AS bakes\nADD https://example.com/a.bin http://example.com/b.bin /tmp/\n
+@reader refused:2       | FROM scratch AS bakes\nADD ftp://example.com/a.bin /tmp/\n
+@reader refused:2       | FROM scratch AS bakes\nADD HTTP://example.com/a.bin /tmp/\n
+@reader refused:2       | FROM scratch AS bakes\nADD git@example.com:fixture/repository.git /tmp/\n
+@reader refused:2       | FROM scratch AS bakes\nCOPY a\xc2\xa0b.bin /tmp/\n
+@reader refused:2       | FROM scratch AS bakes\nCOPY a.bin\x1cb.bin /tmp/\n
+@reader refused:2       | FROM scratch AS bakes\nCOPY ["a\\u00e9.bin", "/tmp/"]\n
+@reader refused:2       | FROM scratch AS bakes\nCOPY a\xff.bin /tmp/\n
+# In a comment such a byte is no concern of the reader's, nor is a character
+# outside ASCII in what a RUN runs.
+@reader bakes:a.bin     | FROM busybox AS bakes\n\x23 caf\xe9 \xff\nRUN echo caf\xc3\xa9\nCOPY a.bin /tmp/\n
+# Two stars in a segment are one star to docker: one directory, not any depth.
+@reader bakes:tools/**/uv.lock | FROM scratch AS bakes\nCOPY tools/**/uv.lock /tmp/\n
+# A keyword docker would lower to ONBUILD (a dotted capital I).
+@reader refused:2       | FROM scratch AS bakes\nONBU\xc4\xb0LD COPY a.bin /tmp/\n

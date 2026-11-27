@@ -236,8 +236,6 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
     }
 
     // Linear sparse path (binary switches, constant topology)
-    std::size_t prevNnz = sparseMna_->nnz();
-
     sparseMna_->clear();
 
     // Stamp static elements via sparse callback
@@ -248,23 +246,13 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
     // Stamp companion models for reactive elements
     companions_.stampAll(*sparseMna_, dt, method_);
 
-    // 3-level factorization caching:
-    //  1. Pattern changed (nnz differs): full factorize
-    //  2. Values changed (same nnz, different triplets): numeric-only refactorize
-    //  3. Identical stamps (same triplets): RHS-only update, reuse LU factors
-    std::size_t currentNnz = sparseMna_->nnz();
-    bool patternChanged = !sparseMna_->isPatternAnalyzed() || (currentNnz != prevNnz);
-
-    if (patternChanged) {
-      if (!sparseMna_->factorize()) {
-        return TransientStatus::ERROR_STEP_FAILED;
-      }
-    } else if (!sparseMna_->tripletsMatch()) {
-      if (!sparseMna_->refactorizeInPlace()) {
-        return TransientStatus::ERROR_STEP_FAILED;
-      }
-    } else {
+    // Unchanged stamps keep their factors and take a new right-hand side.
+    // Anything else is factorized, which reuses the symbolic analysis and the
+    // pivot order where they still apply.
+    if (sparseMna_->tripletsMatch()) {
       sparseMna_->updateRhs();
+    } else if (!sparseMna_->factorize()) {
+      return TransientStatus::ERROR_STEP_FAILED;
     }
 
     std::size_t m = sparseMna_->voltageSourceCount();

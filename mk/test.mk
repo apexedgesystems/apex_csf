@@ -131,10 +131,18 @@ test-py:
 	@cd "$(PY_TOOLS_DIR)" && uv lock --check && uv sync --frozen --no-editable --all-packages && \
 	  (uv run --no-sync pytest -v */py/*/tests $(addprefix $(CURDIR)/,$(PY_DEMO_TEST_DIRS)) || test $$? -eq 5)
 
-# Rust tools unit tests
-test-rust:
-	$(call log,test,Running Rust tools tests)
-	@cd tools && cargo test --workspace
+# Rust tools unit tests, by role. ROLES names the roles whose crates are tested
+# (default: every role, which is the whole workspace). A crate is a member
+# manifest under tools/<role>/rust/, so a new crate needs no entry here.
+# check-ci-crates first: CI runs one role's tests for a change in that role,
+# which is only sound while no crate of another role links it unannounced.
+test-rust: check-ci-crates
+	$(call log,test,Running Rust tools tests ($(ROLES)))
+	@cd tools && for role in $(ROLES); do \
+	  for manifest in "$$role"/rust/*/Cargo.toml; do \
+	    cargo test --locked --manifest-path "$$manifest" || exit 1; \
+	  done; \
+	done
 
 # Shell tools smoke: exercises ops_sdk_package.sh end to end against a
 # synthetic build tree (a stub struct dictionary) and asserts the SDK
@@ -381,6 +389,97 @@ check-data-db-contract: tools-build
 
 .PHONY: cdef check-cdef check-data-db check-data-manifest-helper check-data-db-contract check-build-info check-manifest-headers
 .PHONY: check-bundle-packaging
+
+# The change classifier's contract: for a set of changed paths, which CI jobs
+# run and whether the gate images are rebuilt. The rules live in the script the
+# workflow calls; the cases beside the fixture name hold them to it, and a
+# recorded crate graph with two links the rules miss holds the crate check to
+# its refusal. A table in which every case is wrong holds the check to failing
+# each. An image input written in a form the script does not read has to stop
+# every way it is run, so each is run in a scratch tree whose base Dockerfile
+# is the fixture of such inputs. The cases also hold whole Dockerfiles, byte
+# for byte, to the way docker puts lines together; one of them (a COPY after a
+# line that ends in two backslashes) is run in that tree too, where the command
+# and --dockerfiles have to select it. What the workflow acts on is the
+# command's printed lines, so printed.txt records them: each `#` line names
+# changed paths (none for a bare `#`) and the lines after it are what the
+# command prints for them. Running the command for every `#` line has to
+# reproduce the file exactly, and every output the workflow maps or a job reads
+# has to be one of those lines. Runs on a bare host (stock Python).
+CI_WORKFLOW := .github/workflows/ci.yml
+CI_CLASSIFY := tools/build/py/bin/ci-classify.py
+CI_CLASSIFY_FIXTURES := tools/build/fixtures/ci-classify
+CI_CLASSIFY_CASES := $(CI_CLASSIFY_FIXTURES)/cases.txt
+CI_CLASSIFY_MISSED := $(CI_CLASSIFY_FIXTURES)/crates_missed.json
+
+check-ci-classify:
+	@python3 "$(CI_CLASSIFY)" --check "$(CI_CLASSIFY_CASES)"
+	@out=$$(python3 "$(CI_CLASSIFY)" --check "$(CI_CLASSIFY_FIXTURES)/failing_cases.txt" 2>&1); rc=$$?; \
+	  if [ $$rc -ne 1 ] || ! printf '%s\n' "$$out" | grep -qxF '[check-ci-classify] 4 cases, 4 failed'; then \
+	    printf '%s\n' "$$out"; \
+	    echo "[check-ci-classify] the check passed a case of the table in which every case is wrong (exit $$rc)"; \
+	    exit 1; \
+	  fi
+	@scratch=$$(mktemp -d) && mkdir -p "$$scratch/docker/dev" && \
+	  cp "$(CI_CLASSIFY_FIXTURES)/whole_tree.Dockerfile" "$$scratch/docker/dev/cuda.Dockerfile" || exit 1; \
+	  fail=0; \
+	  for refused in "refused.Dockerfile=6: COPY source " "escape_directive.Dockerfile.txt=1: the escape directive "; do \
+	    cp "$(CI_CLASSIFY_FIXTURES)/$${refused%%=*}" "$$scratch/docker/base.Dockerfile" || exit 1; \
+	    for mode in "" "--dockerfiles" "--check /dev/null"; do \
+	      out=$$(cd "$$scratch" && echo README.md | python3 "$(abspath $(CI_CLASSIFY))" $$mode 2>&1); rc=$$?; \
+	      if [ $$rc -eq 0 ] || [ "$$out" != "$$(printf '%s\n' "$$out" | grep "^docker/base.Dockerfile:$${refused#*=}")" ]; then \
+	        printf '%s\n' "$$out"; \
+	        echo "[check-ci-classify] ci-classify.py $$mode read $${refused%%=*}, which it has to refuse (exit $$rc)"; \
+	        fail=1; \
+	      fi; \
+	    done; \
+	  done; \
+	  printf 'FROM scratch AS bakes\nRUN true \\\\\nCOPY tools/uv.lock /tmp/\n' > "$$scratch/docker/base.Dockerfile"; \
+	  bake=$$(cd "$$scratch" && echo tools/uv.lock | python3 "$(abspath $(CI_CLASSIFY))" 2>&1 | grep -x 'bakes_py=true'); \
+	  named=$$(cd "$$scratch" && echo tools/uv.lock | python3 "$(abspath $(CI_CLASSIFY))" --dockerfiles 2>&1); \
+	  if [ "$$bake" != "bakes_py=true" ] || [ "$$named" != "docker/base.Dockerfile" ]; then \
+	    echo "[check-ci-classify] a COPY after a line that ends in two backslashes is not read (bake: [$$bake], rebuilt: [$$named])"; \
+	    fail=1; \
+	  fi; \
+	  rm -rf "$$scratch"; \
+	  [ $$fail -eq 0 ] || exit 1
+	@out=$$(python3 "$(CI_CLASSIFY)" --check-crates < "$(CI_CLASSIFY_MISSED)" 2>&1); rc=$$?; \
+	  if [ $$rc -ne 1 ] || ! printf '%s\n' "$$out" | grep -qxF '[check-ci-crates] 4 crates, 2 missed'; then \
+	    printf '%s\n' "$$out"; \
+	    echo "[check-ci-classify] the crate check passed a graph with two missed links (exit $$rc)"; \
+	    exit 1; \
+	  fi
+	@want="$(CI_CLASSIFY_FIXTURES)/printed.txt"; \
+	got=$$(grep '^#' "$$want" | while read -r _ paths; do \
+	    printf '# %s\n' "$$paths" | sed 's/ *$$//'; \
+	    printf '%s\n' $$paths | python3 "$(CI_CLASSIFY)" || echo "exit $$?"; \
+	  done); \
+	if [ "$$got" != "$$(cat "$$want")" ]; then \
+	  printf '%s\n' "$$got" | diff "$$want" -; \
+	  echo "[check-ci-classify] the command does not print what $$want records"; \
+	  exit 1; \
+	fi; \
+	n=$$(grep -c '^#' "$$want"); \
+	printed=$$(sed -n 's/=.*//p' "$$want" | sort -u); \
+	mapped=$$(grep -oE 'steps\.f\.outputs\.[a-z_]+' "$(CI_WORKFLOW)" | sed 's/.*\.//' | sort -u); \
+	for name in $$mapped; do \
+	  printf '%s\n' "$$printed" | grep -qxF "$$name" || \
+	    { echo "[check-ci-classify] $(CI_WORKFLOW) maps the output $$name, which the command does not print"; exit 1; }; \
+	done; \
+	for name in $$(grep -oE 'needs\.changes\.outputs\.[a-z_]+' "$(CI_WORKFLOW)" | sed 's/.*\.//' | sort -u); do \
+	  printf '%s\n' "$$mapped" | grep -qxF "$$name" || \
+	    { echo "[check-ci-classify] a job in $(CI_WORKFLOW) reads the output $$name, which the changes job does not map"; exit 1; }; \
+	done; \
+	echo "[check-ci-classify] $$n printed outputs match; $(CI_WORKFLOW) reads only what is printed"
+
+# The role rules against the crate graph cargo reports: a crate that a crate
+# of another role links must select that role's tests too. Needs cargo, so it
+# runs where the Rust tests do.
+check-ci-crates:
+	@(cd tools && cargo metadata --format-version 1 --locked --no-deps) | \
+	  python3 "$(CI_CLASSIFY)" --check-crates
+
+.PHONY: check-ci-classify check-ci-crates
 
 # Tooling coverage (nightly). Each runs its tool test suite under coverage
 # instrumentation and emits a human-readable summary plus a machine report,

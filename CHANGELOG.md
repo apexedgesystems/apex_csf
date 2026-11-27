@@ -71,6 +71,12 @@ any such change is called out explicitly in its entry.
 
 ### Changed
 
+- CI runs a tool change's own role and rebuilds an image only for what the
+  change bakes into it; `make test-rust` and `make clippy` take `ROLES=`
+  ([#198](https://github.com/apexedgesystems/apex_csf/pull/198)).
+- The CI lint job runs in its own image, `apex.lint`: the format and
+  secret-scan tools with no compiler toolchain
+  ([#198](https://github.com/apexedgesystems/apex_csf/pull/198)).
 - Thread pool workers count their in-flight tasks per worker, and the two
   pools share `PoolBase` (`PoolBase.hpp` now holds `PoolStatus`, `TaskError`
   and `PoolConfig`; the pool headers still provide them). Queued tasks drain
@@ -165,9 +171,21 @@ any such change is called out explicitly in its entry.
 - The public factorial helpers (`Factorials.hpp`: `precomputedFactorials`,
   `largeFactorial`); replace direct uses before updating. Breaking.
   ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
+- `MnaSystemSparse::refactorize()` and `refactorizeInPlace()`; call
+  `factorize()`, which reuses what still applies. Breaking: see the
+  [MNA migration table](src/sim/electronics/algorithms/mna/README.md#10-migration).
+  ([#199](https://github.com/apexedgesystems/apex_csf/pull/199))
 
 ### Fixed
 
+- MNA solvers: the sparse solver reuses an analysis and factors only for
+  their own matrix, the AC sweep and the dense solver's borrowed-storage
+  modes handle their edge inputs, and the CUDA batch solver reports each
+  system it did not solve and, once it has queued work, waits for its
+  stream before it returns.
+  Breaking: `solveBatchCustom*` return false for such a batch and mark the
+  system with not-a-number; rebuild what uses the sparse or batch solvers
+  ([#199](https://github.com/apexedgesystems/apex_csf/pull/199)).
 - Corrected nonlinear device stamps, junction currents and FET region
   transitions; `BjtCommonEmitter::computeDC` reports failed solves. Breaking:
   device currents and Level 1 region codes change and six model parameters
