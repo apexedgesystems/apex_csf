@@ -4,7 +4,7 @@
 
 include(apex/All)
 
-set(UNIT_TEST_SOURCES Transient_uTest.cpp IntegrationOrder_uTest.cpp)
+set(UNIT_TEST_SOURCES Transient_uTest.cpp IntegrationOrder_uTest.cpp TransientStepping_uTest.cpp)
 
 apex_add_gtest(
   TARGET
@@ -35,6 +35,7 @@ if (CMAKE_CUDA_COMPILER)
     ${CUDA_TEST_SOURCES}
     LINK
     sim_electronics_algorithms_transient_cuda
+    sim_electronics_algorithms_mna_cuda
     sim_electronics_algorithms_transient
     LABELS
     sim

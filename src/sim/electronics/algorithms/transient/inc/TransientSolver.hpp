@@ -15,7 +15,10 @@
  * 4. Call run() with configuration
  *
  * @note Initialization is NOT RT-safe (allocates).
- * @note step() can be made RT-safe with pre-allocated workspace.
+ * @note step() is NOT RT-safe: the dense paths build the system they stamp
+ *       into at every call, and the sparse paths factorize. Room in the
+ *       workspaces keeps the matrix and factor storage from growing; it
+ *       does not make a step allocation-free.
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
@@ -23,10 +26,12 @@
 #include "src/sim/electronics/algorithms/companions/inc/CompanionModels.hpp"
 #include "src/sim/electronics/algorithms/transient/inc/TransientConfig.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace sim::electronics::algorithms::transient {
@@ -133,6 +138,10 @@ public:
    *
    * This callback is invoked at each time step before solving.
    * It should stamp all resistors, voltage sources, current sources, etc.
+   * A step can call it more than once (a step that finds the workspaces too
+   * small stamps again; a factorization that is kept is stamped for, and so
+   * is the step it serves; a step that falls back is stamped again): it
+   * stamps the same circuit each time and advances nothing of its own.
    * @note NOT RT-safe: moves std::function (may allocate).
    */
   void setStampCallback(StampCallback cb) { stampCallback_ = std::move(cb); }
@@ -183,7 +192,8 @@ public:
    * @param state Current state (updated in place).
    * @return Status code.
    *
-   * @note Can be RT-safe if workspace is pre-allocated.
+   * @note NOT RT-safe: the dense paths construct their stamping system at
+   *       each call, and the sparse paths analyse and factorize.
    */
   TransientStatus step(double dt, TransientState& state);
 
@@ -251,11 +261,13 @@ private:
   StatefulStampCallback statefulStampCallback_;
   StatefulStampCallbackSparse statefulStampCallbackSparse_;
   std::vector<double> prevVoltages_;
+  /// Voltage sources the dense workspaces have room for before a step grows them.
+  static constexpr std::size_t SOURCE_ROOM = 16;
+
   MnaSolveWorkspace workspace_;
 
   // Cached LU optimization (disabled by default - enable for constant-topology circuits)
   MnaFactorizedWorkspace factorizedWs_;
-  std::unique_ptr<MnaSystem> cachedMna_;
   double cachedDt_ = 0.0;
   double cachedFactor_ = 0.0; ///< Companions' conductance factor the cached factors hold.
   bool useCachedLU_ = false;  // Disabled by default (enable for constant topology)
@@ -263,7 +275,7 @@ private:
   // Dual-LU caching for alternating topology (clock HIGH/LOW)
   MnaFactorizedWorkspace dualFactorizedWs_[2]; // [0]=state0, [1]=state1
   std::unique_ptr<MnaSystem> dualCachedMna_[2];
-  double dualCachedDt_ = 0.0;
+  double dualCachedDt_[2] = {0.0, 0.0};     ///< Step length of each state's factors.
   double dualCachedFactor_[2] = {0.0, 0.0}; ///< Conductance factor of each state's factors.
   bool useDualLU_ = false;
 
@@ -277,9 +289,14 @@ private:
   bool alwaysReanalyze_ = false;    ///< Sparse steps iterate Newton, factorizing each iteration.
 
   // Newton-Raphson iteration for nonlinear transient (used with alwaysReanalyze_)
-  std::size_t nrMaxIterations_ = 10; ///< Max NR iterations per timestep.
-  double nrVoltageTolerance_ = 1e-6; ///< Convergence: ngspice CKTvoltTol (absolute component).
-  std::vector<double> nrPrevIterV_;  ///< Previous NR iteration voltages (workspace).
+  std::size_t nrMaxIterations_ = 10;     ///< Max NR iterations per timestep.
+  double nrVoltageTolerance_ = 1e-6;     ///< Convergence: absolute part, volts.
+  double nrRelativeTolerance_ = 1e-3;    ///< Convergence: relative part.
+  bool requireConvergence_ = false;      ///< A step that does not converge is refused.
+  std::size_t newtonIterationCount_ = 0; ///< Newton iterations of nonlinear steps.
+  std::size_t unconvergedStepCount_ = 0; ///< Nonlinear steps that did not converge.
+  std::vector<double> nrPrevIterV_;      ///< Previous NR iteration voltages (workspace).
+  std::vector<double> nrAcceptedV_;      ///< Voltages accepted before a step that may be refused.
 
   /// Post-solve device limiting callback. Called after each NR matrix solve
   /// to apply per-device voltage limiting (fetlim). The callback receives
@@ -315,21 +332,14 @@ private:
   TransientStatus solveStep(double dt, TransientState& state);
 
   /**
-   * @brief Build matrix and factorize for cached LU solve.
-   * @param dt Time step.
-   * @return true if factorization succeeded.
-   */
-  bool buildAndFactorize(double dt);
-
-  /**
    * @brief Capture LU factors from workspace after dgesv.
    * @param dt Time step (stored for cache validity check).
    * @param dim Augmented matrix dimension (n + m).
    *
    * Copies the LU factors and pivot indices from workspace_ (stride ld)
-   * into factorizedWs_ (stride dim) after a dgesv call. This avoids
-   * the O(n^3) cost of buildAndFactorize by reusing the factorization
-   * that dgesv already computed. Cost: O(n^2) memcpy vs O(n^3) dgetrf.
+   * into factorizedWs_ (stride dim) after a dgesv call, which keeps the
+   * factorization dgesv computed in place of a second one. Cost: O(n^2)
+   * memcpy vs O(n^3) dgetrf.
    */
   void captureLU(double dt, std::size_t dim);
 
@@ -369,15 +379,20 @@ public:
   void setCachedLU(bool enable) noexcept { useCachedLU_ = enable; }
 
   /**
-   * @brief Invalidate cached LU factorization.
+   * @brief Invalidate every kept factorization: dense, both states of the
+   *        two-state cache, and sparse.
    *
    * Call this if circuit topology changes (e.g., switch opens/closes).
-   * The next step will re-factorize the matrix.
+   * The next step of each kind will re-factorize the matrix.
    * @note RT-safe: resets scalar fields only.
    */
   void invalidateCache() noexcept {
     factorizedWs_.invalidate();
     cachedDt_ = 0.0;
+    for (int state = 0; state < 2; ++state) {
+      dualFactorizedWs_[state].invalidate();
+      dualCachedDt_[state] = 0.0;
+    }
     sparseCacheValid_ = false;
   }
 
@@ -421,6 +436,66 @@ public:
   void setAlwaysReanalyze(bool enable) noexcept { alwaysReanalyze_ = enable; }
 
   /**
+   * @brief Set how many Newton iterations a step may take.
+   * @param iterations The limit; at least one is taken.
+   * @note RT-safe.
+   */
+  void setNewtonIterationLimit(std::size_t iterations) noexcept {
+    nrMaxIterations_ = std::max<std::size_t>(1, iterations);
+  }
+
+  /**
+   * @brief Set when a Newton iteration counts as converged.
+   *
+   * It has when every net moved from the iterate before by no more than
+   * `relative` times the larger of its two voltages plus `absoluteVolts`.
+   *
+   * @param absoluteVolts Absolute part, in volts: finite and not below zero.
+   * @param relative Relative part: finite and not below zero.
+   * @return false, with both tolerances as they were, when either is
+   *         negative or not finite: a comparison with not-a-number never
+   *         holds, and an iteration judged by it would read as converged.
+   * @note RT-safe.
+   */
+  [[nodiscard]] bool setNewtonTolerances(double absoluteVolts, double relative) noexcept {
+    if (!std::isfinite(absoluteVolts) || !std::isfinite(relative) || absoluteVolts < 0.0 ||
+        relative < 0.0) {
+      return false;
+    }
+    nrVoltageTolerance_ = absoluteVolts;
+    nrRelativeTolerance_ = relative;
+    return true;
+  }
+
+  /**
+   * @brief Choose what a Newton step that does not converge does.
+   *
+   * Off (the default): the last iterate is accepted, the step returns
+   * SUCCESS and unconvergedStepCount() counts it. On: the step is not taken.
+   * It returns ERROR_CONVERGENCE with time, companions, prevVoltages() and
+   * the node voltages as they were before it, whatever a pre-batch callback
+   * wrote to prevVoltages(); the branch currents are the last iterate's.
+   *
+   * @note RT-safe.
+   */
+  void setRequireConvergence(bool require) noexcept { requireConvergence_ = require; }
+
+  /**
+   * @brief Newton iterations taken by nonlinear steps since construction or
+   *        reset().
+   * @note RT-safe.
+   */
+  [[nodiscard]] std::size_t newtonIterationCount() const noexcept { return newtonIterationCount_; }
+
+  /**
+   * @brief Nonlinear steps that reached the iteration limit without
+   *        converging, since construction or reset(): those accepted and
+   *        those refused.
+   * @note RT-safe.
+   */
+  [[nodiscard]] std::size_t unconvergedStepCount() const noexcept { return unconvergedStepCount_; }
+
+  /**
    * @brief Set per-device NR voltage limiting callback.
    *
    * Called after each NR matrix solve. The callback applies device-specific
@@ -444,8 +519,14 @@ public:
    * @return Status code.
    *
    * On first call for each stateIdx, builds and factorizes.
-   * Subsequent calls use O(n^2) back-substitution.
-   * @note NOT RT-safe: first call per stateIdx allocates and factorizes.
+   * Subsequent calls use O(n^2) back-substitution, for as long as the
+   * state's step length, the method's conductance factor and the number of
+   * voltage sources are those its factors were built with; otherwise the
+   * state is factorized again.
+   * @note NOT RT-safe: a call that factorizes allocates, and a call whose
+   *       factors cannot serve falls back to the dense step. A call served
+   *       by kept factors reuses the state's system and workspace; what it
+   *       allocates is not counted by a test.
    */
   TransientStatus stepDual(double dt, int stateIdx, TransientState& state);
 

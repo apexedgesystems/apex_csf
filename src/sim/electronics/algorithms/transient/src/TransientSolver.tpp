@@ -13,12 +13,14 @@ namespace sim::electronics::algorithms::transient {
 
 inline TransientSolver::TransientSolver(std::size_t netCount)
     : netCount_(netCount), prevVoltages_(netCount, 0.0) {
-  // Pre-allocate workspace for RT-safe stepping
-  // Estimate max dimension: nets + some voltage sources
-  workspace_.prepare(netCount + 16);
+  // Room for the nets and SOURCE_ROOM voltage sources, so that the matrix
+  // and factor storage of a circuit within that does not grow. A circuit
+  // with more sources gets its room at its first step. A dense step still
+  // allocates at every call: it builds the system it stamps into anew.
+  workspace_.prepare(netCount + SOURCE_ROOM);
 
   // Pre-allocate factorized workspace for cached LU
-  factorizedWs_.prepare(netCount + 16);
+  factorizedWs_.prepare(netCount + SOURCE_ROOM);
 
   // CUDA workspace is lazy-initialized on setCuda(true) to avoid
   // paying cusolverDnCreate + cublasCreate_v2 overhead (~2ms) when
@@ -29,6 +31,8 @@ inline TransientSolver::TransientSolver(std::size_t netCount)
 
 inline void TransientSolver::reset() noexcept {
   time_ = 0.0;
+  newtonIterationCount_ = 0;
+  unconvergedStepCount_ = 0;
   companions_.reset();
   std::fill(prevVoltages_.begin(), prevVoltages_.end(), 0.0);
   invalidateCache();
@@ -154,13 +158,21 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
       }
       std::copy(prevVoltages_.begin(), prevVoltages_.end(), nrPrevIterV_.begin());
 
+      // The voltages the solver holds as accepted, kept for a step that is
+      // refused: the pre-batch callback may write to prevVoltages().
+      if (requireConvergence_) {
+        nrAcceptedV_.assign(prevVoltages_.begin(), prevVoltages_.end());
+      }
+
       // nrPreBatchCallback runs AFTER copy (Entry 16: reordering didn't
       // unlock multi-instruction, structural limit is elsewhere).
       if (nrPreBatchCallback_) {
         nrPreBatchCallback_(dt);
       }
 
+      bool converged = false;
       for (std::size_t iter = 0; iter < nrMaxIterations_; ++iter) {
+        ++newtonIterationCount_;
         sparseMna_->clear();
 
         if (statefulStampCallbackSparse_) {
@@ -212,11 +224,10 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
 
         // Convergence check
         double maxDelta = 0.0;
-        constexpr double RELTOL = 1e-3;
         for (std::size_t i = 0; i < n; ++i) {
-          double tol =
-              RELTOL * std::max(std::fabs(state.nodeVoltages[i]), std::fabs(nrPrevIterV_[i])) +
-              nrVoltageTolerance_;
+          double tol = nrRelativeTolerance_ *
+                           std::max(std::fabs(state.nodeVoltages[i]), std::fabs(nrPrevIterV_[i])) +
+                       nrVoltageTolerance_;
           double delta = std::fabs(state.nodeVoltages[i] - nrPrevIterV_[i]);
           if (delta > tol && delta > maxDelta) {
             maxDelta = delta;
@@ -226,11 +237,26 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
         std::copy(state.nodeVoltages.begin(), state.nodeVoltages.begin() + n, nrPrevIterV_.begin());
 
         if (maxDelta == 0.0) {
-          break; // Converged
+          converged = true;
+          break;
         }
       }
 
-      // Accept result (converged or not) and advance time
+      if (!converged) {
+        ++unconvergedStepCount_;
+        if (requireConvergence_) {
+          // The step is not taken. The companions and the time have not
+          // moved; the solver's previous voltages and the node voltages go
+          // back to those accepted before the step.
+          prevVoltages_ = nrAcceptedV_;
+          std::copy(prevVoltages_.begin(), prevVoltages_.begin() + static_cast<std::ptrdiff_t>(n),
+                    state.nodeVoltages.begin());
+          sparseCacheValid_ = false;
+          return TransientStatus::ERROR_CONVERGENCE;
+        }
+      }
+
+      // Accept the result, converged or counted as not, and advance time
       prevVoltages_ = state.nodeVoltages;
       companions_.updateAll(state.nodeVoltages, dt, method_);
       time_ += dt;
@@ -289,15 +315,30 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
   // Build MNA system.
   // Stamp conductances directly into LAPACK workspace (column-major)
   // to eliminate intermediate G_ allocation and copy overhead.
-  const std::size_t LD = workspace_.maxDim;
-  std::memset(workspace_.A.data(), 0, LD * LD * sizeof(double));
-  MnaSystem mna(netCount_, workspace_.A.data(), LD);
+  std::optional<MnaSystem> stamped;
+  const auto STAMP = [this, dt, &stamped] {
+    const std::size_t LD = workspace_.maxDim;
+    std::memset(workspace_.A.data(), 0, LD * LD * sizeof(double));
+    stamped.emplace(netCount_, workspace_.A.data(), LD);
 
-  // Stamp static elements (resistors, sources)
-  invokeStampCallback(mna, time_ + dt);
+    // Stamp static elements (resistors, sources)
+    invokeStampCallback(*stamped, time_ + dt);
 
-  // Stamp companion models for reactive elements
-  companions_.stampAll(mna, dt, method_);
+    // Stamp companion models for reactive elements
+    companions_.stampAll(*stamped, dt, method_);
+  };
+  STAMP();
+
+  // The stamp says how many voltage sources there are. With more than the
+  // workspaces have room for, they are given the room and the circuit is
+  // stamped again into it. The workspaces grow at this step and not again.
+  if (const std::size_t DIM = netCount_ + stamped->voltageSourceCount();
+      !workspace_.canHandle(DIM)) {
+    workspace_.prepare(DIM);
+    factorizedWs_.prepare(DIM);
+    STAMP();
+  }
+  MnaSystem& mna = *stamped;
 
   // Solve using pre-allocated workspace (avoids per-solve allocation)
   std::size_t n = mna.netCount();
@@ -331,8 +372,7 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
   time_ += dt;
 
   // captureLU copies the LU factors that dgesv already computed in
-  // workspace_.A, avoiding a separate O(n^3) buildAndFactorize call on the
-  // next step.
+  // workspace_.A, so the next step needs no factorization of its own.
   if (useCachedLU_) {
     std::size_t dim = n + m;
     captureLU(dt, dim);
@@ -343,31 +383,6 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
 }
 
 /* ----------------------------- Cached LU Methods ----------------------------- */
-
-inline bool TransientSolver::buildAndFactorize(double dt) {
-  // Create or reuse cached MNA system
-  if (!cachedMna_) {
-    cachedMna_ = std::make_unique<MnaSystem>(netCount_);
-  }
-
-  cachedMna_->clear();
-
-  // Stamp static elements (conductances only)
-  invokeStampCallback(*cachedMna_, time_ + dt);
-
-  // Stamp companion conductances (not currents)
-  companions_.stampConductanceAll(*cachedMna_, dt, method_);
-
-  // Factorize the matrix
-  bool ok = cachedMna_->factorize(factorizedWs_);
-
-  if (ok) {
-    cachedDt_ = dt;
-    cachedFactor_ = companions_.conductanceFactor(dt, method_);
-  }
-
-  return ok;
-}
 
 /* ----------------------------- Capture LU from Workspace ----------------------------- */
 
@@ -601,7 +616,8 @@ inline TransientStatus TransientSolver::stepDual(double dt, int stateIdx, Transi
 
   // Check if we have a valid cache for this state
   const double FACTOR = companions_.conductanceFactor(dt, method_);
-  if (dualFactorizedWs_[stateIdx].isFactorized() && std::fabs(dt - dualCachedDt_) < 1e-15 * dt &&
+  if (dualFactorizedWs_[stateIdx].isFactorized() &&
+      std::fabs(dt - dualCachedDt_[stateIdx]) < 1e-15 * dt &&
       FACTOR == dualCachedFactor_[stateIdx]) {
     return solveDualCachedStep(dt, stateIdx, state);
   }
@@ -612,7 +628,7 @@ inline TransientStatus TransientSolver::stepDual(double dt, int stateIdx, Transi
     return solveStep(dt, state);
   }
 
-  dualCachedDt_ = dt;
+  dualCachedDt_[stateIdx] = dt;
   dualCachedFactor_[stateIdx] = FACTOR;
   return solveDualCachedStep(dt, stateIdx, state);
 }
@@ -623,11 +639,6 @@ inline bool TransientSolver::buildAndFactorizeDual(double dt, int stateIdx) {
     dualCachedMna_[stateIdx] = std::make_unique<MnaSystem>(netCount_);
   }
 
-  // Prepare factorized workspace
-  if (!dualFactorizedWs_[stateIdx].isFactorized()) {
-    dualFactorizedWs_[stateIdx].prepare(netCount_ + 16);
-  }
-
   dualCachedMna_[stateIdx]->clear();
 
   // Stamp static elements
@@ -635,6 +646,11 @@ inline bool TransientSolver::buildAndFactorizeDual(double dt, int stateIdx) {
 
   // Stamp companion conductances
   companions_.stampConductanceAll(*dualCachedMna_[stateIdx], dt, method_);
+
+  // Room for the factors of what was stamped, and at least for SOURCE_ROOM
+  // voltage sources. prepare() only ever grows.
+  dualFactorizedWs_[stateIdx].prepare(
+      netCount_ + std::max(SOURCE_ROOM, dualCachedMna_[stateIdx]->voltageSourceCount()));
 
   // Factorize
   bool ok = dualCachedMna_[stateIdx]->factorize(dualFactorizedWs_[stateIdx]);
@@ -653,6 +669,14 @@ inline TransientStatus TransientSolver::solveDualCachedStep(double dt, int state
   invokeStampCallback(mna, time_ + dt);
 
   companions_.stampAll(mna, dt, method_);
+
+  // Factors of another dimension are another circuit's: a voltage source
+  // was added or removed since they were built. They are dropped and the
+  // step is taken through a factorization of what is stamped now.
+  if (netCount_ + mna.voltageSourceCount() != ws.dim) {
+    ws.invalidate();
+    return stepDual(dt, stateIdx, state);
+  }
 
   // Ensure output arrays are sized
   if (state.nodeVoltages.size() < netCount_) {
@@ -685,8 +709,13 @@ inline TransientStatus TransientSolver::solveDualCachedStep(double dt, int state
 inline TransientResult TransientSolver::run(const TransientConfig& config, bool recordHistory) {
   TransientResult result;
 
-  // Validate configuration
-  if (config.tStep <= 0.0 || config.tEnd <= config.tStart) {
+  // A span with no countable number of steps is no run: a step or a span
+  // that is not above zero, not a number, or too many steps to count.
+  const TransientConfig::StepPlan PLAN = config.stepPlan();
+  const std::size_t WHOLE_STEPS = PLAN.whole;
+  const double LAST_STEP = PLAN.last;
+  const std::size_t STEPS = WHOLE_STEPS + (LAST_STEP > 0.0 ? 1U : 0U);
+  if (STEPS == 0) {
     result.success = false;
     result.errorMessage = "Invalid time configuration";
     return result;
@@ -717,42 +746,50 @@ inline TransientResult TransientSolver::run(const TransientConfig& config, bool 
     std::fill(state.branchCurrents.begin(), state.branchCurrents.end(), 0.0);
   }
 
+  // The run reports the Newton work of its own steps, not the solver's totals.
+  const std::size_t ITERATIONS_BEFORE = newtonIterationCount_;
+  const std::size_t UNCONVERGED_BEFORE = unconvergedStepCount_;
+  const auto COUNT_NEWTON = [this, &result, ITERATIONS_BEFORE, UNCONVERGED_BEFORE] {
+    result.nonlinearIters = newtonIterationCount_ - ITERATIONS_BEFORE;
+    result.unconvergedSteps = unconvergedStepCount_ - UNCONVERGED_BEFORE;
+  };
+
   // Reserve history if recording
   if (recordHistory) {
-    std::size_t estimatedSteps = config.stepCount();
-    result.history.reserve(estimatedSteps + 1);
+    result.history.reserve(STEPS + 1);
     result.history.push_back(state); // Initial state
   }
 
-  // Time-stepping loop
-  double dt = config.tStep;
-
-  while (time_ < config.tEnd) {
-    // Adjust last step to hit end exactly
-    if (time_ + dt > config.tEnd) {
-      dt = config.tEnd - time_;
-    }
+  // The steps are counted, and each ends at a time worked out from its
+  // number: summing step lengths lands beside the end time, and a loop that
+  // ran until the sum reached it would take one more step of the difference.
+  for (std::size_t k = 1; k <= STEPS; ++k) {
+    const double dt = (k <= WHOLE_STEPS) ? config.tStep : LAST_STEP;
 
     TransientStatus stepStatus = step(dt, state);
 
     if (stepStatus != TransientStatus::SUCCESS) {
       result.success = false;
-      result.errorMessage = "Time step failed at t=" + std::to_string(time_);
+      result.errorMessage = (stepStatus == TransientStatus::ERROR_CONVERGENCE
+                                 ? "Newton iteration did not converge at t="
+                                 : "Time step failed at t=") +
+                            std::to_string(time_);
       result.finalTime = time_;
       result.finalState = state;
+      COUNT_NEWTON();
       return result;
     }
 
+    time_ = (k == STEPS) ? config.tEnd : config.tStart + static_cast<double>(k) * config.tStep;
+    state.time = time_;
     result.stepsTaken++;
 
     if (recordHistory) {
       result.history.push_back(state);
     }
-
-    // Reset dt for next iteration
-    dt = config.tStep;
   }
 
+  COUNT_NEWTON();
   result.success = true;
   result.finalTime = time_;
   result.finalState = std::move(state);
