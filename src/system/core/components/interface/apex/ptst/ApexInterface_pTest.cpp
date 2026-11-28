@@ -878,4 +878,148 @@ PERF_TEST(InterfacePerf, TxChainBurstAbsorption8Ticks) {
       << "pipe must absorb 8 ticks x 32 frames between flushes";
 }
 
+/* ----------------------------- PING Reply ----------------------------- */
+
+namespace {
+
+/// An interface on a loopback TCP port and one client connected to it,
+/// both driven by the calling thread: a request is sent, the interface is
+/// serviced until its reply has been read.
+struct PingLink {
+  system_core::interface::ApexInterface iface;
+  int clientFd{-1};
+
+  bool init(std::uint16_t port) noexcept {
+    system_core::interface::ApexInterfaceTunables tun{};
+    std::snprintf(tun.host.data(), tun.host.size(), "127.0.0.1");
+    tun.port = port;
+    tun.framing = system_core::interface::FramingType::SLIP;
+    if (iface.configure(tun) != system_core::interface::Status::SUCCESS) {
+      return false;
+    }
+    clientFd = ::socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(port);
+    if (clientFd < 0 ||
+        ::connect(clientFd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+      return false;
+    }
+    // Let the server accept.
+    for (int i = 0; i < 20; ++i) {
+      iface.pollSockets(5);
+    }
+    return true;
+  }
+
+  /// Send one framed request and service the interface until a whole
+  /// frame has come back. @return the reply's length on the wire, or 0
+  /// when none came.
+  std::size_t roundTrip(const std::uint8_t* frame, std::size_t len, std::uint8_t* reply,
+                        std::size_t cap) noexcept {
+    constexpr std::uint8_t SLIP_END = 0xC0;
+    if (::send(clientFd, frame, len, 0) != static_cast<ssize_t>(len)) {
+      return 0;
+    }
+    std::size_t got = 0;
+    for (int tries = 0; tries < 100000 && got < cap; ++tries) {
+      iface.pollSockets(0);
+      iface.drainTelemetryOutboxes();
+      iface.drainCommandsToComponents();
+      const ssize_t N = ::recv(clientFd, reply + got, cap - got, MSG_DONTWAIT);
+      if (N > 0) {
+        got += static_cast<std::size_t>(N);
+        if (got >= 2 && reply[got - 1] == SLIP_END) {
+          return got;
+        }
+      }
+    }
+    return 0;
+  }
+
+  ~PingLink() {
+    if (clientFd >= 0) {
+      ::close(clientFd);
+    }
+    (void)iface.shutdown();
+  }
+};
+
+/// PING the interface with BYTES of payload and read the echo, over TCP.
+/// The request is decoded into the interface's frame buffer and the reply
+/// is assembled there; past six payload bytes the echo's source and its
+/// place in the reply overlap.
+void runPingReply(const char* name, const char* label, std::size_t bytes, std::uint16_t port) {
+  auto perf = ub::makePerfCaseWithProfiler(name, ub::detail::getPerfConfig());
+  PingLink link;
+  ASSERT_TRUE(link.init(port));
+
+  std::vector<std::uint8_t> payload(bytes);
+  for (std::size_t i = 0; i < bytes; ++i) {
+    payload[i] = static_cast<std::uint8_t>(i + 1U);
+  }
+  const aproto::AprotoHeader HDR = aproto::buildHeader(
+      link.iface.fullUid(), static_cast<std::uint16_t>(aproto::SystemOpcode::PING), 7,
+      static_cast<std::uint16_t>(bytes), false, true, false);
+  std::array<std::uint8_t, 512> packet{};
+  std::size_t packetLen = 0;
+  ASSERT_EQ(aproto::encodePacket(HDR, {payload.data(), payload.size()},
+                                 {packet.data(), packet.size()}, packetLen),
+            aproto::Status::SUCCESS);
+  std::array<std::uint8_t, 1024> frame{};
+  const auto FRAMED =
+      apex::protocols::slip::encode({packet.data(), packetLen}, frame.data(), frame.size());
+  const std::size_t FRAME_LEN = static_cast<std::size_t>(FRAMED.bytesProduced);
+  std::array<std::uint8_t, 2048> reply{};
+
+  // One round trip checked whole before any is timed: the reply is an
+  // acknowledgement that carries the payload back after its own fields.
+  {
+    const std::size_t GOT = link.roundTrip(frame.data(), FRAME_LEN, reply.data(), reply.size());
+    ASSERT_GT(GOT, 0U) << "no reply to the PING";
+    apex::protocols::slip::DecodeState st;
+    apex::protocols::slip::DecodeConfig cfg;
+    std::array<std::uint8_t, 2048> decoded{};
+    const auto R = apex::protocols::slip::decodeChunk(st, cfg, {reply.data(), GOT}, decoded.data(),
+                                                      decoded.size());
+    aproto::PacketView view{};
+    ASSERT_EQ(
+        aproto::createPacketView({decoded.data(), static_cast<std::size_t>(R.bytesProduced)}, view),
+        aproto::Status::SUCCESS);
+    ASSERT_EQ(view.payload.size(), aproto::APROTO_ACK_PAYLOAD_SIZE + bytes);
+    EXPECT_EQ(
+        std::memcmp(view.payload.data() + aproto::APROTO_ACK_PAYLOAD_SIZE, payload.data(), bytes),
+        0)
+        << "the echo differs from the payload sent";
+  }
+
+  std::size_t lost = 0;
+  auto fn = [&]() {
+    if (link.roundTrip(frame.data(), FRAME_LEN, reply.data(), reply.size()) == 0U) {
+      ++lost;
+    }
+  };
+  perf.warmup(fn);
+  perf.throughputLoop(fn, label);
+  EXPECT_EQ(lost, 0U) << "PING round trips without a reply";
+}
+
+} // namespace
+
+/** @brief PING with no payload: the reply is the acknowledgement alone. */
+PERF_TEST(InterfacePerf, PingReplyEmpty) {
+  runPingReply("InterfacePerf.PingReplyEmpty", "Interface_PingReply_0B", 0, 6321);
+}
+
+/** @brief PING with four bytes: the echo and its source do not overlap. */
+PERF_TEST(InterfacePerf, PingReply4) {
+  runPingReply("InterfacePerf.PingReply4", "Interface_PingReply_4B", 4, 6322);
+}
+
+/** @brief PING with 200 bytes: the echo's source and its place in the reply overlap. */
+PERF_TEST(InterfacePerf, PingReply200) {
+  runPingReply("InterfacePerf.PingReply200", "Interface_PingReply_200B", 200, 6323);
+}
+
 PERF_MAIN()
