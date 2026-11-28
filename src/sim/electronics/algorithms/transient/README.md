@@ -117,23 +117,59 @@ const CompanionSet& companions() const noexcept;
 
 void setStampCallback(StampCallback cb);
 void setStatefulStampCallback(StatefulStampCallback cb);
+void setStatefulStampCallbackSparse(StatefulStampCallbackSparse cb);
 
 void setCachedLU(bool enabled) noexcept;
 void setDualLU(bool enabled) noexcept;
 void setSparse(bool enabled) noexcept;
-void invalidateCache() noexcept;
+void invalidateCache() noexcept;  // dense, both two-state factorizations, sparse
 
 void setIntegrationMethod(IntegrationMethod method) noexcept;
 IntegrationMethod integrationMethod() const noexcept;
 
+// Sparse steps solved by Newton iteration
+void setAlwaysReanalyze(bool enable) noexcept;
+void setNewtonIterationLimit(std::size_t iterations) noexcept;                // 10
+[[nodiscard]] bool setNewtonTolerances(double absoluteVolts,
+                                       double relative) noexcept;             // 1e-6, 1e-3
+void setRequireConvergence(bool require) noexcept;                            // off
+[[nodiscard]] std::size_t newtonIterationCount() const noexcept;
+[[nodiscard]] std::size_t unconvergedStepCount() const noexcept;
+
 TransientResult run(const TransientConfig& config, bool recordHistory = false);
-TransientStatus step(double dt, TransientState& state) noexcept;
-TransientStatus stepDual(double dt, int stateIdx, TransientState& state) noexcept;
+TransientStatus step(double dt, TransientState& state);
+TransientStatus stepDual(double dt, int stateIdx, TransientState& state);
 TransientStatus computeDC(TransientState& state);
 
 [[nodiscard]] double time() const noexcept;
-void reset() noexcept;
+void reset() noexcept;  // time, companions, kept factors, Newton counters
 ```
+
+`run()` divides the span into steps of `tStep` and, when the span is not a
+whole number of them, one shorter step at the end. It takes the steps by
+number and sets each step's end time from its number, the last to `tEnd`:
+a thousand steps for 1 us by 1 ns, with no extra step for what a sum of
+steps leaves over. What the span leaves within the tolerance of a whole
+count is not a step: 1e-9 of a step, or the count's own rounding where
+that is larger. A count that is a whole number is taken as it stands.
+
+A Newton step that reaches its iteration limit without converging is
+accepted and counted by `unconvergedStepCount()`. With
+`setRequireConvergence(true)` it is refused: `ERROR_CONVERGENCE`, with time,
+companions and node voltages as before the step, and `run()` ends there.
+`setNewtonTolerances()` returns true and sets both tolerances, or returns
+false and changes neither when one of them is negative or not finite.
+
+The dense workspaces have room for sixteen voltage sources. A circuit with
+more is given the room at its first step, and the workspaces do not grow
+again. That is about the matrix and factor storage only: a dense step
+allocates at every call, because it builds the system it stamps into anew.
+
+A stamp callback can be called more than once for a step: the step that
+finds the workspaces too small stamps again, a kept factorization is
+stamped for as well as the step it serves, and a step that falls back is
+stamped again. It stamps the same circuit each time and advances nothing
+of its own per call.
 
 ### TransientConfig
 
@@ -143,11 +179,19 @@ void reset() noexcept;
 ```cpp
 struct TransientConfig {
   double tStart = 0.0;
-  double tEnd   = 1e-3;
-  double tStep  = 1e-6;
+  double tEnd   = 1e-6;
+  double tStep  = 1e-9;
   IntegrationMethod method = IntegrationMethod::BACKWARD_EULER;
+  bool dcOpPoint = true;  // computeDC() before the first step
+
+  std::size_t wholeSteps() const noexcept;  // steps of tStep in the span
+  double      lastStep() const noexcept;    // the shorter step that ends it; 0 if none
+  std::size_t stepCount() const noexcept;   // what run() takes; 0 for a span it refuses
 };
 ```
+
+`run()` refuses a configuration whose `stepCount()` is 0: a step or a span
+that is not above zero or not a number, or 2^53 steps and more.
 
 ### TransientState / TransientResult / TransientStatus
 
@@ -159,16 +203,22 @@ struct TransientState {
 };
 
 struct TransientResult {
-  TransientStatus            status = TransientStatus::ERROR_INVALID_CONFIG;
-  std::vector<TransientState> history;     // populated when recordHistory=true
-  std::size_t                stepCount = 0;
+  bool                        success = false;
+  std::string                 errorMessage;
+  std::size_t                 stepsTaken = 0;
+  std::size_t                 nonlinearIters = 0;    // Newton iterations of this run
+  std::size_t                 unconvergedSteps = 0;  // steps of this run that did not converge
+  double                      finalTime = 0.0;
+  TransientState              finalState;
+  std::vector<TransientState> history;               // populated when recordHistory=true
 };
 
 enum class TransientStatus : std::uint8_t {
   SUCCESS = 0,
-  ERROR_STEP_FAILED,
-  ERROR_DC_FAILED,
-  ERROR_INVALID_CONFIG,
+  ERROR_INVALID_CONFIG = 1,
+  ERROR_DC_FAILED = 2,
+  ERROR_STEP_FAILED = 3,
+  ERROR_CONVERGENCE = 4,  // a Newton step did not converge and convergence is required
 };
 ```
 
@@ -201,7 +251,7 @@ repeated value. A run with `dcOpPoint` starts at rest: each capacitor at its
 operating-point voltage, each inductor with the current the operating point
 passed through it. GEAR2 weighs its history by the lengths of the two steps,
 so a last step shortened to land on `tEnd` keeps the method's order.
-`cuda::stepCuda` steps with backward Euler.
+`cuda::stepCuda` steps with the method it is given.
 
 ### TransientCuda
 
@@ -214,12 +264,18 @@ so a last step shortened to land on `tEnd` keeps the method's order.
 TransientStatus stepCuda(mna::cuda::MnaCudaWorkspace& ws,
                          MnaSystem& mna,
                          CompanionSet& companions,
-                         const StampCallback& stamp,
-                         double dt, double time,
+                         const StampCallback& stamp,  // or a StatefulStampCallback
+                         double dt, IntegrationMethod method, double& time,
                          std::vector<double>& prevVoltages,
                          mna::MnaSolveWorkspace& workspace,
-                         TransientState& state) noexcept;
+                         TransientState& state);
 ```
+
+The system is cleared and stamped by the call, so one `MnaSystem` serves
+every step. `method` is the method the companions are stamped and updated
+with. A step the GPU does not take (no CUDA, fewer than 100 nets, a
+workspace too small, a failed solve) returns `ERROR_STEP_FAILED` with
+`time`, the companions and the state untouched.
 
 NOT RT-safe: device allocation + host-device transfers per call.
 
@@ -271,17 +327,30 @@ solver.setStatefulStampCallback(
   });
 ```
 
-### GPU Step with CPU Fallback
+### GPU Step, or the CPU Solver
+
+`stepCuda` works on pieces the caller holds: the system, the companions,
+the time and the previous voltages. A run is driven by it from start to
+end, or by a `TransientSolver` with its own companions; the two are not
+mixed step by step.
 
 ```cpp
 mna::cuda::MnaCudaWorkspace gpuWs;
-gpuWs.prepare(netCount + 16);
-
-for (double t = 0.0; t < tEnd; t += dt) {
-  auto status = cuda::stepCuda(gpuWs, mna, companions, stamp, dt, t,
-                               prevVoltages, workspace, state);
-  if (status != TransientStatus::SUCCESS) {
-    solver.step(dt, state);
+if (cuda::available() && gpuWs.prepare(netCount + sourceCount)) {
+  MnaSystem mna(netCount);  // cleared and stamped by every step
+  double t = 0.0;
+  for (std::size_t k = 0; k < steps; ++k) {
+    if (cuda::stepCuda(gpuWs, mna, companions, stamp, dt, method, t, prevVoltages,
+                       workspace, state) != TransientStatus::SUCCESS) {
+      break;  // Not taken: time, companions and state are as before the step
+    }
+  }
+} else {
+  solver.setIntegrationMethod(method);
+  for (std::size_t k = 0; k < steps; ++k) {
+    if (solver.step(dt, state) != TransientStatus::SUCCESS) {
+      break;
+    }
   }
 }
 ```
@@ -292,27 +361,40 @@ for (double t = 0.0; t < tEnd; t += dt) {
 
 ### RT-Safe Functions
 
-- `TransientSolver::step` (after pre-allocation)
-- `TransientSolver::stepDual` (after pre-allocation)
-- `TransientSolver::computeDC` (uses pre-allocated workspace)
 - `TransientSolver::time`, `reset`, `invalidateCache`,
-  `setIntegrationMethod`, `integrationMethod`
-- `setStampCallback` (small `std::function` copy)
+  `setIntegrationMethod`, `integrationMethod`, the Newton settings and
+  counters
 
 ### NOT RT-Safe Functions
 
 - `TransientSolver` construction (allocates workspace)
+- `TransientSolver::computeDC` (builds its own system)
+- `TransientSolver::step` on the dense paths, with or without kept
+  factors: each call builds the system it stamps into. Room in the
+  workspaces keeps the matrix and factor storage from growing and no more
+- `TransientSolver::step` on the sparse paths (KLU analysis and factors
+  allocate)
+- `TransientSolver::stepDual`: a call that factorizes allocates, and one
+  whose factors cannot serve falls back to the dense step. A call served
+  by kept factors reuses the state's system and workspace (it is served
+  while the state's step length, the method's conductance factor and the
+  number of voltage sources are those the factors were built with); no
+  test counts what such a call allocates, so it is not offered as
+  allocation-free
+- `setStampCallback` and the other callback setters (a `std::function` is
+  moved in and may allocate)
 - `CompanionSet::addCapacitor`, `addInductor` (grow internal vectors)
 - `TransientSolver::run` (may allocate `history`)
 - `cuda::stepCuda`, `cuda::evaluateCapacitorsCuda` (device alloc + transfers)
 
 ### Recommended Configuration
 
-- Build the solver, add reactive elements, and call `run` once outside the
-  RT loop to warm up workspaces.
-- Inside the RT loop, only call `step` or `stepDual` with a reused
-  `TransientState`.
-- Enable `setCachedLU(true)` for any topology that does not change.
+- No stepping path of this solver is allocation-free as it stands, so
+  none is offered for a hard real-time loop. Kept factors
+  (`setCachedLU(true)`, `setDualLU(true)`) cut the work of a step for a
+  topology that does not change; they do not remove its allocations.
+- A loop that must not allocate solves a prepared
+  [MNA system](../mna/README.md#7-rt-safety) directly.
 
 ---
 

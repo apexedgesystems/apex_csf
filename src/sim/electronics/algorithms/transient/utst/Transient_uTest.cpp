@@ -37,7 +37,6 @@ TEST(TransientConfigTest, DefaultValues) {
   EXPECT_DOUBLE_EQ(config.tEnd, 1e-6);
   EXPECT_DOUBLE_EQ(config.tStep, 1e-9);
   EXPECT_EQ(config.method, IntegrationMethod::BACKWARD_EULER);
-  EXPECT_FALSE(config.adaptiveStep);
   EXPECT_TRUE(config.dcOpPoint);
 }
 

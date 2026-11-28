@@ -10,6 +10,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace sim::electronics::algorithms::transient {
 
@@ -40,29 +42,95 @@ struct TransientConfig {
   double tEnd = 1e-6;  ///< Simulation end time (seconds).
   double tStep = 1e-9; ///< Fixed time step (seconds).
 
-  double maxStep = 1e-8;  ///< Maximum adaptive step (if adaptive enabled).
-  double minStep = 1e-12; ///< Minimum adaptive step.
-
-  double relTol = 1e-3; ///< Relative tolerance for adaptive stepping.
-  double absTol = 1e-6; ///< Absolute tolerance for adaptive stepping.
-
   IntegrationMethod method = IntegrationMethod::BACKWARD_EULER;
 
-  bool adaptiveStep = false; ///< Enable adaptive time stepping.
-  bool dcOpPoint = true;     ///< Compute DC operating point before transient.
+  bool dcOpPoint = true; ///< Compute DC operating point before transient.
 
-  std::size_t maxNonlinearIter = 20; ///< Max Newton iterations per step.
-  double nonlinearTol = 1e-9;        ///< Nonlinear convergence tolerance.
+  /// A span within this fraction of a step of a whole number of steps is
+  /// that number of steps: (tEnd - tStart) / tStep is rarely whole in binary
+  /// when the two are decimal.
+  static constexpr double WHOLE_STEP_TOLERANCE = 1e-9;
+
+  /// The count of steps is known to this fraction of itself: four of a
+  /// double's rounding steps. For a large count that is more than
+  /// WHOLE_STEP_TOLERANCE, and it is then the tolerance, up to half a step.
+  static constexpr double COUNT_ROUNDING = 4.0 * 2.220446049250313e-16;
+
+  /// Step counts are kept below 2^53, where a double still counts by ones.
+  static constexpr double STEP_COUNT_LIMIT = 9007199254740992.0;
+
+  /** @brief How a span divides into steps. */
+  struct StepPlan {
+    std::size_t whole = 0; ///< Steps of tStep.
+    double last = 0.0;     ///< Length of the shorter step that follows them; 0 for none.
+  };
 
   /**
-   * @brief Calculate total number of steps for fixed stepping.
-   * @return Approximate step count.
+   * @brief Divide the span into steps of tStep and, where it is not a whole
+   *        number of them, one shorter step.
+   *
+   * The span's count of steps, (tEnd - tStart) / tStep, is worked out once,
+   * and both parts are read from what it leaves over the whole number below
+   * it. Left within the tolerance of nothing, the whole steps are that
+   * number; within the tolerance of a whole step, the next; otherwise that
+   * number and a last step of what is left. A count that is a whole number
+   * leaves nothing and is the plan's count as it stands.
+   * The tolerance is WHOLE_STEP_TOLERANCE of a step, or the count's own
+   * rounding where that is larger, so no last step is a rounding of the
+   * count; it is never more than half a step, where the count goes to the
+   * nearer whole number and a half stays below.
+   *
+   * @return No steps when tStep is not above zero, the span is not above
+   *         zero, or the count is not below STEP_COUNT_LIMIT (not-a-number
+   *         included).
+   * @note RT-safe: pure arithmetic.
+   */
+  [[nodiscard]] constexpr StepPlan stepPlan() const noexcept {
+    if (!(tStep > 0.0) || !(tEnd > tStart)) {
+      return {};
+    }
+    const double COUNT = (tEnd - tStart) / tStep;
+    if (!(COUNT < STEP_COUNT_LIMIT)) {
+      return {};
+    }
+    // Under the limit both are exact: the whole number below the count, and
+    // what the count leaves over it.
+    const auto BELOW = static_cast<std::size_t>(COUNT);
+    const double LEFT = COUNT - static_cast<double>(BELOW);
+    const double ROUNDING = COUNT * COUNT_ROUNDING;
+    const double WIDEST = ROUNDING > WHOLE_STEP_TOLERANCE ? ROUNDING : WHOLE_STEP_TOLERANCE;
+    const double TOLERANCE = WIDEST < 0.5 ? WIDEST : 0.5;
+    if (LEFT <= TOLERANCE) {
+      return {BELOW, 0.0};
+    }
+    if (LEFT >= 1.0 - TOLERANCE) {
+      return {BELOW + 1U, 0.0};
+    }
+    return {BELOW, LEFT * tStep};
+  }
+
+  /**
+   * @brief The number of steps of tStep that fit the span: stepPlan().whole.
+   * @note RT-safe: pure arithmetic.
+   */
+  [[nodiscard]] constexpr std::size_t wholeSteps() const noexcept { return stepPlan().whole; }
+
+  /**
+   * @brief Length of the shorter step that ends a span which is not a whole
+   *        number of steps: stepPlan().last, 0 for none.
+   * @note RT-safe: pure arithmetic.
+   */
+  [[nodiscard]] constexpr double lastStep() const noexcept { return stepPlan().last; }
+
+  /**
+   * @brief The number of steps run() takes: the whole steps, and one more
+   *        when a shorter step ends the span.
+   * @return 0 for a configuration run() refuses.
    * @note RT-safe: pure arithmetic.
    */
   [[nodiscard]] constexpr std::size_t stepCount() const noexcept {
-    if (tStep <= 0.0)
-      return 0;
-    return static_cast<std::size_t>((tEnd - tStart) / tStep);
+    const StepPlan PLAN = stepPlan();
+    return PLAN.whole + (PLAN.last > 0.0 ? 1U : 0U);
   }
 
   /**
@@ -128,9 +196,10 @@ struct TransientResult {
   bool success = false;     ///< True if simulation completed.
   std::string errorMessage; ///< Error description if failed.
 
-  std::size_t stepsTaken = 0;     ///< Number of time steps executed.
-  std::size_t nonlinearIters = 0; ///< Total nonlinear iterations.
-  double finalTime = 0.0;         ///< Simulation end time reached.
+  std::size_t stepsTaken = 0;       ///< Number of time steps executed.
+  std::size_t nonlinearIters = 0;   ///< Newton iterations of the run's nonlinear steps.
+  std::size_t unconvergedSteps = 0; ///< Nonlinear steps of the run that did not converge.
+  double finalTime = 0.0;           ///< Simulation end time reached.
 
   TransientState finalState;           ///< State at final time.
   std::vector<TransientState> history; ///< Optional full time history.
@@ -143,12 +212,10 @@ struct TransientResult {
  */
 enum class TransientStatus : std::uint8_t {
   SUCCESS = 0,
-  ERROR_INVALID_CONFIG = 1,     ///< Invalid configuration parameters.
-  ERROR_DC_FAILED = 2,          ///< DC operating point solve failed.
-  ERROR_STEP_FAILED = 3,        ///< Time step solve failed.
-  ERROR_CONVERGENCE = 4,        ///< Nonlinear iteration did not converge.
-  ERROR_TIMESTEP_TOO_SMALL = 5, ///< Adaptive step went below minimum.
-  ERROR_MATRIX_SINGULAR = 6     ///< MNA matrix is singular.
+  ERROR_INVALID_CONFIG = 1, ///< Invalid configuration parameters.
+  ERROR_DC_FAILED = 2,      ///< DC operating point solve failed.
+  ERROR_STEP_FAILED = 3,    ///< Time step solve failed.
+  ERROR_CONVERGENCE = 4     ///< Nonlinear iteration did not converge and convergence is required.
 };
 
 } // namespace sim::electronics::algorithms::transient

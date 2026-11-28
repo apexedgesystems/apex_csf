@@ -163,12 +163,18 @@ any such change is called out explicitly in its entry.
   `largeFactorial`); replace direct uses before updating. Breaking.
   ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
 - `MnaSystemSparse::refactorize()` and `refactorizeInPlace()`; call
-  `factorize()`, which reuses what still applies. Breaking: see the
-  [MNA migration table](src/sim/electronics/algorithms/mna/README.md#10-migration).
+  `factorize()`, which reuses what still applies. Breaking.
   ([#199](https://github.com/apexedgesystems/apex_csf/pull/199))
 
 ### Fixed
 
+- Transient solver: `run()` counts its steps (no extra sliver step), dense
+  steps take any number of voltage sources, Newton steps that do not
+  converge are counted and can be refused, the two-state factors follow
+  each state's step length, and `cuda::stepCuda` takes the integration
+  method. Breaking: unread `TransientConfig` fields and two unused status
+  values are removed and `stepCuda` gains a parameter
+  ([#204](https://github.com/apexedgesystems/apex_csf/pull/204)).
 - The gitleaks binary in the lint and dev images belongs to root, not to
   the user id its release archive records.
   ([#202](https://github.com/apexedgesystems/apex_csf/pull/202))
@@ -176,8 +182,7 @@ any such change is called out explicitly in its entry.
   Gear's coefficients and follows the step length, and a run starts from the
   operating point with each inductor's current. Breaking: `update` and
   `updateAll` take the integration method and the CUDA evaluators return a
-  status; rebuild what uses the companions or the transient solver. See the
-  [companions migration table](src/sim/electronics/algorithms/companions/README.md#9-migration)
+  status; rebuild what uses the companions or the transient solver
   ([#200](https://github.com/apexedgesystems/apex_csf/pull/200)).
 - MNA solvers: the sparse solver reuses an analysis and factors only for
   their own matrix, the AC sweep and the dense solver's borrowed-storage
@@ -190,8 +195,8 @@ any such change is called out explicitly in its entry.
 - Corrected nonlinear device stamps, junction currents and FET region
   transitions; `BjtCommonEmitter::computeDC` reports failed solves. Breaking:
   device currents and Level 1 region codes change and six model parameters
-  are removed; migration steps are in
-  [#195](https://github.com/apexedgesystems/apex_csf/pull/195).
+  are removed
+  ([#195](https://github.com/apexedgesystems/apex_csf/pull/195)).
 - `executive::toString` names `ERROR_TPRM_INGEST`; it returned
   `UNKNOWN_STATUS` for that code.
   ([#192](https://github.com/apexedgesystems/apex_csf/pull/192))

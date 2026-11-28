@@ -403,6 +403,14 @@ PERF_TEST(TransientPerf, RcTransient_10section_1000step) {
 
   double perStep = result.stats.median * 1e6 / 1000.0;
   std::printf("  1000 steps: %8.0f sims/s  (%.0f ns/step)\n", result.callsPerSecond, perStep);
+
+  // What one run delivers, for a reader who compares two builds: the steps
+  // it took and where it ended.
+  solver.reset();
+  const TransientResult DELIVERED = solver.run(config, false);
+  EXPECT_TRUE(DELIVERED.success);
+  std::printf("  delivered: %zu steps, final time %.17g s, V(2) %.17g\n", DELIVERED.stepsTaken,
+              DELIVERED.finalTime, DELIVERED.finalState.voltage(2));
 }
 
 PERF_MAIN()
@@ -601,4 +609,104 @@ PERF_TEST(TransientKeptFactors, Gear2ChangedStep_DualKept_201step) {
 PERF_TEST(TransientKeptFactors, Gear2ChangedStep_SparseKept_201step) {
   UB_PERF_GUARD(perf);
   runChangedStepCase(perf, Keeping::SPARSE, "rlc_gear2_changed_sparse");
+}
+
+/* ----------------------------- Newton Steps ----------------------------- */
+
+namespace {
+
+/** @brief Ask the solver to refuse steps that do not converge, where it can be asked. */
+template <typename Solver> bool requireConvergence(Solver& solver) {
+  if constexpr (requires { solver.setRequireConvergence(true); }) {
+    solver.setRequireConvergence(true);
+    return true;
+  } else {
+    return false;
+  }
+}
+
+/** @brief Newton iterations the solver has counted; 0 where it does not count them. */
+template <typename Solver> std::size_t newtonIterations(const Solver& solver) {
+  if constexpr (requires { solver.newtonIterationCount(); }) {
+    return solver.newtonIterationCount();
+  } else {
+    return 0;
+  }
+}
+
+/**
+ * @brief A hundred sparse steps solved by Newton iteration on two nets, with
+ *        the solver's default limit and tolerances, after a reset.
+ *
+ * `fixedPoint`: the stamp closes on 2 V by halves (ten iterations for the
+ * first step from 0 V, one for each step after it). Otherwise the stamp's
+ * source turns against the iterate's sign and every step uses up its ten
+ * iterations. `refuse`: steps that do not converge are refused; the case is
+ * skipped where the solver cannot be asked to.
+ */
+void runNewtonCase(vernier::bench::PerfCase& perf, bool fixedPoint, bool refuse,
+                   const char* label) {
+  constexpr std::size_t STEPS = 100;
+  std::size_t stamps = 0;
+  TransientSolver solver(2);
+  solver.setSparse(true);
+  solver.setAlwaysReanalyze(true);
+  solver.setStatefulStampCallbackSparse([&stamps, fixedPoint](MnaSystemSparse& mna,
+                                                              double /*seconds*/,
+                                                              const std::vector<double>& iterate) {
+    ++stamps;
+    mna.addConductance(1, 0, 1.0);
+    mna.addCurrent(1, 0, fixedPoint ? 1.0 + 0.5 * iterate[1] : (iterate[1] > 0.0 ? -0.5 : 0.5));
+  });
+  if (refuse && !requireConvergence(solver)) {
+    GTEST_SKIP() << "This solver has no setting to refuse unconverged steps.";
+  }
+  TransientState state;
+  state.resize(2, 0);
+
+  volatile double sink = 0.0;
+  std::size_t operations = 0;
+  std::size_t succeeded = 0;
+  std::size_t iterations = 0;
+  const auto BODY = [&] {
+    solver.reset();
+    for (std::size_t i = 0; i < STEPS; ++i) {
+      succeeded += (solver.step(1e-6, state) == TransientStatus::SUCCESS) ? 1U : 0U;
+    }
+    iterations += newtonIterations(solver);
+    sink = state.voltage(1) + solver.time();
+    ++operations;
+  };
+  perf.warmup(BODY);
+  const auto RESULT = perf.throughputLoop(BODY, label);
+
+  EXPECT_TRUE(std::isfinite(sink));
+  EXPECT_EQ(succeeded, refuse ? 0U : operations * STEPS);
+  const double PER_STEP = 1.0 / (static_cast<double>(operations) * static_cast<double>(STEPS));
+  std::printf("  %s: %.1f ns/step; a step: %.2f stamp calls, %.2f iterations counted, "
+              "%.2f returned SUCCESS; V(1) %.6f, time %.3g s\n",
+              label, 1e9 / (RESULT.callsPerSecond * static_cast<double>(STEPS)),
+              static_cast<double>(stamps) * PER_STEP, static_cast<double>(iterations) * PER_STEP,
+              static_cast<double>(succeeded) * PER_STEP, state.voltage(1), solver.time());
+}
+
+} // namespace
+
+/** @brief Newton steps that converge: ten iterations for the first, one for each after. */
+PERF_TEST(TransientNewton, Converging_100step) {
+  UB_PERF_GUARD(perf);
+  std::printf("\n=== Sparse Newton steps, 2 nets ===\n");
+  runNewtonCase(perf, /*fixedPoint=*/true, /*refuse=*/false, "newton_converging");
+}
+
+/** @brief Newton steps that use up their ten iterations and are accepted. */
+PERF_TEST(TransientNewton, Exhausted_100step) {
+  UB_PERF_GUARD(perf);
+  runNewtonCase(perf, /*fixedPoint=*/false, /*refuse=*/false, "newton_exhausted");
+}
+
+/** @brief Newton steps that use up their ten iterations and are refused. */
+PERF_TEST(TransientNewton, ExhaustedAndRefused_100step) {
+  UB_PERF_GUARD(perf);
+  runNewtonCase(perf, /*fixedPoint=*/false, /*refuse=*/true, "newton_refused");
 }
