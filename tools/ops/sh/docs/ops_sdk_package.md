@@ -29,7 +29,9 @@ ops_sdk_package.sh --app <name> --build-dir <path> [options]
 
 ---
 
-## Prerequisites
+## Reference
+
+### Prerequisites
 
 - `/bin/bash`, and `cat`, `cp`, `cut`, `du`, `mkdir`, `rm`, `sed` and `tar` on
   PATH (the script's `# Requires:` line).
@@ -37,9 +39,7 @@ ops_sdk_package.sh --app <name> --build-dir <path> [options]
 - Run the application at least once to produce `registry.rdat` and
   `scheduler.sdat` exports (optional but recommended for the runtime/ section).
 
----
-
-## Output Structure
+### Output Structure
 
 ```
 ops_sdk/<app>/

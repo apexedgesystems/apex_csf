@@ -26,7 +26,9 @@ ops-deck --db <path> [--output <path>]
 
 ---
 
-## Output Sections
+## Reference
+
+### Output Sections
 
 The generated Markdown deck contains:
 

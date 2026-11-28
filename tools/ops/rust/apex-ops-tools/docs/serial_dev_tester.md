@@ -29,7 +29,18 @@ serial_dev_tester --config <file> [options]
 
 ---
 
-## Config Format
+## Exit Codes
+
+| Code | Meaning                              |
+| ---- | ------------------------------------ |
+| 0    | All tests passed.                    |
+| 1    | One or more tests failed or errored. |
+
+---
+
+## Reference
+
+### Config Format
 
 ```toml
 [[pairs]]
@@ -46,15 +57,6 @@ ports = ["/dev/ttyACM0", "/dev/ttyACM1"]
 - **loopback**: requires `port` (single device with TX and RX shorted).
 - **interconnect**: requires `ports` (two device paths).
 - Missing or malformed fields produce `error` results.
-
----
-
-## Exit Codes
-
-| Code | Meaning                              |
-| ---- | ------------------------------------ |
-| 0    | All tests passed.                    |
-| 1    | One or more tests failed or errored. |
 
 ---
 

@@ -58,7 +58,18 @@ component payloads individually or through the build's packing manifests
 
 ---
 
-## Input Format
+## Exit Codes
+
+| Code | Meaning                       |
+| ---- | ----------------------------- |
+| 0    | Success.                      |
+| 1    | Parse or serialization error. |
+
+---
+
+## Reference
+
+### Input Format
 
 Each field entry specifies `type`, `size`, and `value`. Fields are serialized
 in declaration order. Metadata keys starting with `__` (e.g. `__note__`) are
@@ -71,7 +82,7 @@ them (array elements inherit the parent's keys). Constraint keys are
 authoring metadata only; they change neither the serialized bytes nor
 the layout hash.
 
-### Supported types
+#### Supported types
 
 | Type     | Sizes      | Notes                                 |
 | -------- | ---------- | ------------------------------------- |
@@ -84,7 +95,7 @@ the layout hash.
 | `array`  | N          | Requires `element_type`.              |
 | `struct` | N          | Requires nested `fields`.             |
 
-### Example TOML input
+#### Example TOML input
 
 ```toml
 [MyTunableParams.gainP]
@@ -102,15 +113,6 @@ type = "float"
 size = 4
 value = 200.0
 ```
-
----
-
-## Exit Codes
-
-| Code | Meaning                       |
-| ---- | ----------------------------- |
-| 0    | Success.                      |
-| 1    | Parse or serialization error. |
 
 ---
 

@@ -31,7 +31,9 @@ apex_data_gen --manifest <path> --output <path> [--pretty]
 
 ---
 
-## Field definitions (cdef)
+## Reference
+
+### Field definitions (cdef)
 
 An optional ordered `[[fields.<StructName>]]` array makes the spec the
 source of truth for that struct: the committed `.auto` header (packed
@@ -61,7 +63,7 @@ vocabulary. Every generated header pins each field with a
 `static_assert(offsetof(...))`, so a clean compile is proof the C++
 layout matches the hash.
 
-## Command and telemetry declarations
+### Command and telemetry declarations
 
 Optional `[[commands]]` / `[[telemetry]]` arrays declare the
 component's C2 surface in the same spec the dispatch base generates
@@ -81,7 +83,7 @@ spec-defined structs and an enum still needs that one header; and a
 `header` declared on any entry is checked before discovery, so it must
 exist even when every struct is spec-defined.
 
-## Layout identity
+### Layout identity
 
 Spec-defined struct entries carry `layout_hash` -- the CRC-32 the v3
 payload prelude is checked against on the vehicle -- and
@@ -89,7 +91,7 @@ payload prelude is checked against on the vehicle -- and
 producer of a layout states its hash; ground consumers carry it
 instead of recomputing from the flattened field lists.
 
-## Task declarations
+### Task declarations
 
 Optional `[[tasks]]` entries (`name`, `uid`, `doc`) declare the
 component's schedulable tasks -- identity only. The generated base's
@@ -97,7 +99,7 @@ component's schedulable tasks -- identity only. The generated base's
 frequencies, priorities, and offsets stay in the scheduler TOML so
 the vehicle can be retimed without regeneration.
 
-## Proto-authored specs
+### Proto-authored specs
 
 A component-level `proto_spec` key references a profile `.proto` file
 whose messages populate the field specs instead of inline `[[fields]]`
@@ -106,7 +108,7 @@ error). Every spec-defined component also emits its canonical
 interface as `.auto/<Component>.proto`. See
 [proto_profile.md](../../apex-tprm/docs/proto_profile.md) for the profile.
 
-## Constraint declarations
+### Constraint declarations
 
 An optional `[constraints.<StructName>]` section declares each field's
 legal range once at the component level -- `min`/`max` (inclusive),
@@ -123,6 +125,8 @@ The declaration flows into the dictionary JSON per field (a
 templates via `tprm_template`, and into the on-board constraint tables
 the build compiles (see `cmake/apex/Tprm.cmake`). Constraints naming an
 unregistered struct or an unknown field fail generation.
+
+---
 
 ## Examples
 

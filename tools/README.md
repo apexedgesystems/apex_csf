@@ -4,6 +4,8 @@ Command-line tools that stand beside the apex C++ tree, built through the
 same CMake configure (`tools/CMakeLists.txt`) and installed under
 `bin/tools/<role>/` in the build directory.
 
+---
+
 ## Layout
 
 Every tool lives under the role that consumes it, then its language, then
@@ -47,12 +49,18 @@ its sources, tests and docs beside its manifest:
 | C++      | a tool directory        | `CMakeLists.txt`, `src/`, `inc/`, `utst/`             | `apex_add_tool`, which derives the role from the directory |
 | Shell    | a script under `sh/bin` | `bin/`, `docs/`                                       | copied as it is                                            |
 
+Each role's tools, who invokes them and how to build and test them:
+[build/](build/README.md), [ops/](ops/README.md),
+[analysis/](analysis/README.md).
+
 Mechanics and recipes: [docs/rust_workspace.md](docs/rust_workspace.md),
 [docs/python_tools.md](docs/python_tools.md#the-workspace-and-the-lock);
-the tools themselves: [docs/rust_tools.md](docs/rust_tools.md),
+the tools by language: [docs/rust_tools.md](docs/rust_tools.md),
 [docs/python_tools.md](docs/python_tools.md),
 [registry-info](analysis/cpp/registry_info/docs/registry_info.md),
 [ops/sh/](ops/sh/README.md).
+
+---
 
 ## Adding a tool
 
@@ -70,6 +78,8 @@ build names it.
 Then `make tools-<role>`; the executable appears in `bin/tools/<role>/`.
 A tool's doc goes in its unit's `docs/` and is linked from the index for
 its language.
+
+---
 
 ## Adding a language under a role
 
@@ -100,6 +110,8 @@ every one of them:
    (like a wheel) needs a packaging change -- extend package-tools.sh,
    never a second implementation.
 
+---
+
 ## Adding a role
 
 1. Add it to `_APEX_TOOL_ROLES` in `tools/CMakeLists.txt` and to
@@ -121,6 +133,8 @@ every one of them:
    once it has an entry in `ROLE_SUITES`. Read the ordered rules for
    the scope you intend, then add the rule and its cases; see
    [What CI runs for a tools change](#what-ci-runs-for-a-tools-change).
+
+---
 
 ## What CI runs for a tools change
 
