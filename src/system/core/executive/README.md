@@ -363,12 +363,36 @@ manually on an otherwise-idle host.
 
 ## RT Safety
 
-| Function              | RT-Safe | Notes                       |
-| --------------------- | ------- | --------------------------- |
-| `init()`              | No      | Allocates, performs I/O     |
-| `run()`               | Yes     | Main loop is RT-safe        |
-| `shutdown()`          | No      | Joins threads, flushes logs |
-| `registerComponent()` | No      | Modifies registry           |
+| Function              | RT-Safe | Notes                                                    |
+| --------------------- | ------- | -------------------------------------------------------- |
+| `init()`              | No      | Allocates, performs I/O                                  |
+| `run()`               | No      | Starts and joins threads; see below for the cycle within |
+| `shutdown()`          | No      | Joins threads, flushes logs                              |
+| `registerComponent()` | No      | Modifies registry                                        |
+
+`run()` as a whole is not RT-safe. It starts the executive's threads,
+and it ends by joining them and then waiting for every task still
+running to return, with no bound on how long a task body takes.
+
+Inside it, TaskExecution's cycle (take the tick, deliver queued
+commands, dispatch, wait within the frame for the cycle's tasks, run
+the action phase) is the path built to a deadline. This document claims
+no bound for it. What a configuration achieves is measured on its
+target, and the departures from a fixed cost on that thread are these:
+
+- **`RELOAD_TPRM`.** The component's `loadTprm()` runs on TaskExecution
+  between two cycles and reads the payload file there. The time depends
+  on the file and the storage and is logged per reload (`load_us`).
+- **`RELOAD_LIBRARY`.** The publication runs on TaskExecution between
+  two cycles under the hand-over's mutex. Until the replacement has been
+  told the bus is ready, TaskExecution runs no action phase and delivers
+  no queued command.
+- **Queued commands.** A command delivered on TaskExecution runs the
+  target component's handler, which is component code.
+- **Events.** A warning logged from the cycle (a skipped action phase, a
+  dropped or skipped dispatch) formats a string and allocates.
+- **Pause and shutdown.** A paused TaskExecution parks, and at shutdown
+  it leaves its loop; neither is part of a cycle's cost.
 
 ## See Also
 
