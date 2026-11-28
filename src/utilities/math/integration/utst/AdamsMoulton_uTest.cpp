@@ -3,212 +3,201 @@
  * @brief Unit tests for apex::math::integration::AdamsMoulton.
  *
  * Notes:
- *  - Tests verify initialization, stepping, and error handling.
- *  - All operations are RT-safe (zero allocation per step).
+ *  - Step values are checked against the formulas solved by hand for a linear
+ *    problem, and the order against an analytic solution.
+ *  - The options supply the corrector's Newton matrix, I - (5/12)*dt*df/dx.
  */
 
 #include "src/utilities/math/integration/inc/AdamsMoulton.hpp"
 
+#include "src/utilities/math/integration/utst/support/ConvergenceOrder.hpp"
+
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstdint>
 
 using apex::math::integration::AdamsMoulton;
 using apex::math::integration::AdamsMoultonOptions;
 using apex::math::integration::Status;
+using apex::math::integration::test::observedOrder;
 
-/**
- * @test InitializeResetsStatsAndTime
- *
- * Verify initialize resets statistics and sets the starting time.
- */
-TEST(AdamsMoultonTest, InitializeResetsStatsAndTime) {
-  using State = double;
-  using Options = AdamsMoultonOptions<State>;
-  AdamsMoulton<State, Options> integrator;
+namespace {
 
-  double t0 = 3.14;
-  State y0 = 2.71;
-  auto f = [](State, double) -> State { return 0.0; };
+constexpr auto SUCCESS = static_cast<std::uint8_t>(Status::SUCCESS);
+constexpr double FIVE_TWELFTHS = 5.0 / 12.0;
 
-  uint8_t status = integrator.initialize(f, y0, t0, Options{});
-  EXPECT_EQ(status, static_cast<uint8_t>(Status::SUCCESS));
+/** Options for y' = a*y at step dt. One Newton iteration solves a linear problem exactly. */
+AdamsMoultonOptions<double> linearOptions(double a, double dt) {
+  AdamsMoultonOptions<double> opts;
+  opts.computeJacobian = [a, dt](const double&, double) { return 1.0 - FIVE_TWELFTHS * dt * a; };
+  opts.linearSolve = [](const double& matrix, const double& rhs) { return rhs / matrix; };
+  return opts;
+}
 
-  const auto& stats = integrator.stats();
-  EXPECT_EQ(stats.functionEvals, 0u);
-  EXPECT_EQ(stats.jacobianEvals, 0u);
-  EXPECT_EQ(stats.linearSolveCalls, 0u);
-  EXPECT_EQ(stats.stepRejections, 0u);
+/** One classical Runge-Kutta step of y' = a*y multiplies y by this. */
+double rungeKuttaGrowth(double z) {
+  return 1.0 + z + z * z / 2.0 + z * z * z / 6.0 + z * z * z * z / 24.0;
+}
 
+/** The corrector solved for y' = a*y: x1 = xN + (dt/12)*(5*a*x1 + 8*a*xN - a*xPrev). */
+double corrector(double xN, double xPrev, double a, double dt) {
+  return (xN + (dt / 12.0) * (8.0 * a * xN - a * xPrev)) / (1.0 - FIVE_TWELFTHS * a * dt);
+}
+
+/** Error at t = 1 of y' = cos(t)*y, y(0) = 1, whose solution is exp(sin(t)). */
+double errorAtOne(int steps) {
+  const double dt = 1.0 / steps;
+  AdamsMoultonOptions<double> opts;
+  opts.maxIterations = 50;
+  opts.computeJacobian = [dt](const double&, double t) {
+    return 1.0 - FIVE_TWELFTHS * dt * std::cos(t);
+  };
+  opts.linearSolve = [](const double& matrix, const double& rhs) { return rhs / matrix; };
+  opts.converged = [](const double& delta, const double&) { return std::fabs(delta) < 1e-14; };
+
+  AdamsMoulton<double> integrator;
+  integrator.initialize([](const double& y, double t) { return std::cos(t) * y; }, 1.0, 0.0, opts);
+  double y = 1.0;
+  for (int i = 0; i < steps; ++i) {
+    integrator.step(y, dt, opts);
+  }
+  return std::fabs(y - std::exp(std::sin(1.0)));
+}
+
+} // namespace
+
+/* ----------------------------- Initialization ----------------------------- */
+
+/** @test Sets the starting time and evaluates nothing */
+TEST(AdamsMoultonTest, InitializeSetsTimeAndEvaluatesNothing) {
+  AdamsMoulton<double> integrator;
+  const double t0 = 2.71;
+
+  ASSERT_EQ(integrator.initialize([](const double&, double) { return 0.0; }, 1.0, t0,
+                                  AdamsMoultonOptions<double>{}),
+            SUCCESS);
+
+  EXPECT_EQ(integrator.stats().functionEvals, 0U);
+  EXPECT_EQ(integrator.stats().jacobianEvals, 0U);
+  EXPECT_EQ(integrator.stats().linearSolveCalls, 0U);
   EXPECT_DOUBLE_EQ(integrator.time(), t0);
 }
 
-/**
- * @test SingleStepLinearODE
- *
- * For y' = a*y, the 2-step Adams-Moulton update with
- * initial history y_prev=y0 is
- *
- *   y1 = y0 * (1 + 7/12*a*dt) / (1 - 5/12*a*dt).
- */
-TEST(AdamsMoultonTest, SingleStepLinearODE) {
-  using State = double;
-  using Options = AdamsMoultonOptions<State>;
+/* -------------------------------- Stepping -------------------------------- */
 
-  double a = 2.0;
-  double dt = 0.1;
-  State y0 = 1.0;
+/** @test Takes the first step as a Runge-Kutta step: four evaluations and no solve */
+TEST(AdamsMoultonTest, FirstStepIsRungeKutta) {
+  const double a = -0.7;
+  const double dt = 0.1;
+  const auto opts = linearOptions(a, dt);
+  AdamsMoulton<double> integrator;
+  ASSERT_EQ(integrator.initialize([a](const double& y, double) { return a * y; }, 1.0, 0.0, opts),
+            SUCCESS);
 
-  double num = 1.0 + (7.0 / 12.0) * a * dt;
-  double denom = 1.0 - (5.0 / 12.0) * a * dt;
-  double y1Exp = y0 * num / denom;
+  double y = 1.0;
+  ASSERT_EQ(integrator.step(y, dt, opts), SUCCESS);
 
-  Options opts{};
-  opts.computeJacobian = [a, dt](const State&, double) -> State {
-    // J = I - (dt/12)*5*a
-    return 1.0 - (5.0 / 12.0) * a * dt;
-  };
-  opts.linearSolve = [](const State& J, const State& rhs) -> State { return rhs / J; };
-  opts.converged = [](const State&, const State&) { return true; };
+  EXPECT_NEAR(y, rungeKuttaGrowth(a * dt), 1e-15);
+  EXPECT_DOUBLE_EQ(integrator.time(), dt);
+  EXPECT_EQ(integrator.stats().functionEvals, 4U);
+  EXPECT_EQ(integrator.stats().jacobianEvals, 0U);
+  EXPECT_EQ(integrator.stats().linearSolveCalls, 0U);
+}
 
-  AdamsMoulton<State, Options> integrator;
-  ASSERT_EQ(integrator.initialize(
-                /*f=*/[a](State y, double) { return a * y; },
-                /*initialState=*/y0,
-                /*t0=*/0.0, opts),
-            static_cast<uint8_t>(Status::SUCCESS));
+/** @test Takes later steps with the corrector over the last two derivatives */
+TEST(AdamsMoultonTest, LaterStepsAreTheCorrector) {
+  const double a = -0.7;
+  const double dt = 0.1;
+  const auto opts = linearOptions(a, dt);
+  AdamsMoulton<double> integrator;
+  ASSERT_EQ(integrator.initialize([a](const double& y, double) { return a * y; }, 1.0, 0.0, opts),
+            SUCCESS);
 
-  State state = y0;
-  uint8_t st = integrator.step(state, dt, opts);
-  EXPECT_EQ(st, static_cast<uint8_t>(Status::SUCCESS));
+  double y = 1.0;
+  ASSERT_EQ(integrator.step(y, dt, opts), SUCCESS);
+  const double y1 = y;
+  ASSERT_EQ(integrator.step(y, dt, opts), SUCCESS);
+  const double y2 = y;
+  ASSERT_EQ(integrator.step(y, dt, opts), SUCCESS);
 
-  EXPECT_DOUBLE_EQ(state, y1Exp);
+  EXPECT_NEAR(y2, corrector(y1, 1.0, a, dt), 1e-15);
+  EXPECT_NEAR(y, corrector(y2, y1, a, dt), 1e-15);
+  // Four for the start step, then the derivative at the state and one Newton iteration per step
+  EXPECT_EQ(integrator.stats().functionEvals, 8U);
+  EXPECT_EQ(integrator.stats().jacobianEvals, 2U);
+  EXPECT_EQ(integrator.stats().linearSolveCalls, 2U);
+}
+
+/** @test Steps from the state it is given, with the derivative of the step before as history */
+TEST(AdamsMoultonTest, StepsFromTheStateItIsGiven) {
+  const double a = -0.7;
+  const double dt = 0.1;
+  const auto opts = linearOptions(a, dt);
+  AdamsMoulton<double> integrator;
+  ASSERT_EQ(integrator.initialize([a](const double& y, double) { return a * y; }, 1.0, 0.0, opts),
+            SUCCESS);
+
+  double y = 1.0;
+  ASSERT_EQ(integrator.step(y, dt, opts), SUCCESS);
+
+  // The caller replaces the state between steps
+  y = 5.0;
+  ASSERT_EQ(integrator.step(y, dt, opts), SUCCESS);
+
+  EXPECT_NEAR(y, corrector(5.0, 1.0, a, dt), 1e-14);
+}
+
+/** @test Starts again with a Runge-Kutta step after a second initialize */
+TEST(AdamsMoultonTest, InitializeForgetsHistory) {
+  const double a = -0.7;
+  const double dt = 0.1;
+  const auto opts = linearOptions(a, dt);
+  const auto f = [a](const double& y, double) { return a * y; };
+  AdamsMoulton<double> integrator;
+  ASSERT_EQ(integrator.initialize(f, 1.0, 0.0, opts), SUCCESS);
+  double y = 1.0;
+  ASSERT_EQ(integrator.step(y, dt, opts), SUCCESS);
+  ASSERT_EQ(integrator.step(y, dt, opts), SUCCESS);
+
+  ASSERT_EQ(integrator.initialize(f, 2.0, 0.0, opts), SUCCESS);
+  y = 2.0;
+  ASSERT_EQ(integrator.step(y, dt, opts), SUCCESS);
+
+  EXPECT_NEAR(y, 2.0 * rungeKuttaGrowth(a * dt), 1e-15);
+}
+
+/* ----------------------------- Error Handling ----------------------------- */
+
+/** @test Leaves state, time and history alone when the Newton iteration does not converge */
+TEST(AdamsMoultonTest, NonConvergenceChangesNothing) {
+  const double a = -0.7;
+  const double dt = 0.1;
+  const auto opts = linearOptions(a, dt);
+  AdamsMoulton<double> integrator;
+  ASSERT_EQ(integrator.initialize([a](const double& y, double) { return a * y; }, 1.0, 0.0, opts),
+            SUCCESS);
+  double y = 1.0;
+  ASSERT_EQ(integrator.step(y, dt, opts), SUCCESS);
+  const double y1 = y;
+
+  auto never = opts;
+  never.maxIterations = 3;
+  never.converged = [](const double&, const double&) { return false; };
+  EXPECT_EQ(integrator.step(y, dt, never), static_cast<std::uint8_t>(Status::ERROR_CONVERGENCE));
+  EXPECT_EQ(y, y1);
   EXPECT_DOUBLE_EQ(integrator.time(), dt);
 
-  const auto& stats = integrator.stats();
-  EXPECT_EQ(stats.functionEvals, 3u);
-  EXPECT_EQ(stats.jacobianEvals, 1u);
-  EXPECT_EQ(stats.linearSolveCalls, 1u);
+  // The history is still the first step's: the retry gives the corrector's value
+  ASSERT_EQ(integrator.step(y, dt, opts), SUCCESS);
+  EXPECT_NEAR(y, corrector(y1, 1.0, a, dt), 1e-15);
 }
 
-/**
- * @test TwoStepLinearODE
- *
- * Verify second Adams-Moulton step for y' = a*y:
- *
- *   y2 = [y1 + (dt/12)(8a*y1 - a*y0)] / (1 - 5/12*a*dt).
- */
-TEST(AdamsMoultonTest, TwoStepLinearODE) {
-  using State = double;
-  using Options = AdamsMoultonOptions<State>;
+/* ------------------------------- Convergence ------------------------------ */
 
-  double a = 1.5;
-  double dt = 0.2;
-  State y0 = 1.0;
-
-  // first-step exact
-  double num1 = 1.0 + (7.0 / 12.0) * a * dt;
-  double den1 = 1.0 - (5.0 / 12.0) * a * dt;
-  double y1 = y0 * num1 / den1;
-
-  // second-step expected
-  double num2 = y1 + (dt / 12.0) * (8.0 * a * y1 - a * y0);
-  double den2 = 1.0 - (5.0 / 12.0) * a * dt;
-  double y2Exp = num2 / den2;
-
-  Options opts{};
-  opts.computeJacobian = [a, dt](const State&, double) -> State {
-    return 1.0 - (5.0 / 12.0) * a * dt;
-  };
-  opts.linearSolve = [](const State& J, const State& rhs) -> State { return rhs / J; };
-  opts.converged = [](const State&, const State&) { return true; };
-
-  AdamsMoulton<State, Options> integrator;
-  ASSERT_EQ(integrator.initialize(
-                /*f=*/[a](State y, double) { return a * y; },
-                /*initialState=*/y0,
-                /*t0=*/0.5, opts),
-            static_cast<uint8_t>(Status::SUCCESS));
-
-  State state = y0;
-  // first step
-  ASSERT_EQ(integrator.step(state, dt, opts), static_cast<uint8_t>(Status::SUCCESS));
-  EXPECT_DOUBLE_EQ(state, y1);
-
-  // second step
-  ASSERT_EQ(integrator.step(state, dt, opts), static_cast<uint8_t>(Status::SUCCESS));
-  EXPECT_DOUBLE_EQ(state, y2Exp);
-
-  EXPECT_DOUBLE_EQ(integrator.time(), 0.5 + 2 * dt);
-
-  const auto& stats = integrator.stats();
-  EXPECT_EQ(stats.functionEvals, 6u);
-  EXPECT_EQ(stats.jacobianEvals, 2u);
-  EXPECT_EQ(stats.linearSolveCalls, 2u);
-}
-
-/**
- * @test InvalidStepSize
- *
- * Passing dt <= 0 returns ERROR_INVALID_STEP and leaves stats/time unchanged.
- */
-TEST(AdamsMoultonTest, InvalidStepSize) {
-  using State = double;
-  using Options = AdamsMoultonOptions<State>;
-
-  AdamsMoulton<State, Options> integrator;
-  double t0 = 1.0;
-  State y0 = 4.0;
-  auto f = [](State, double) -> State { return 1.0; };
-  integrator.initialize(f, y0, t0, Options{});
-
-  State state = y0;
-  uint8_t status = integrator.step(state, /*dt=*/0.0, Options{});
-  EXPECT_EQ(status, static_cast<uint8_t>(Status::ERROR_INVALID_STEP));
-
-  const auto& stats = integrator.stats();
-  EXPECT_EQ(stats.functionEvals, 0u);
-  EXPECT_EQ(stats.jacobianEvals, 0u);
-  EXPECT_EQ(stats.linearSolveCalls, 0u);
-  EXPECT_DOUBLE_EQ(integrator.time(), t0);
-}
-
-/**
- * @test MultipleStepsConstantODE
- *
- * For y' = 0, Adams-Moulton should preserve the initial value exactly.
- */
-TEST(AdamsMoultonTest, MultipleStepsConstantODE) {
-  using State = double;
-  using Options = AdamsMoultonOptions<State>;
-
-  double dt = 0.15;
-  int n = 5;
-  State y0 = 7.0;
-
-  Options opts{};
-  // f(x,t) = 0 => df/dx = 0 => J = I
-  opts.computeJacobian = [](const State&, double) { return 1.0; };
-  opts.linearSolve = [](const State& J, const State& rhs) { return rhs / J; };
-  opts.converged = [](const State&, const State&) { return true; };
-
-  AdamsMoulton<State, Options> integrator;
-  ASSERT_EQ(integrator.initialize(
-                /*f=*/[](State, double) { return 0.0; },
-                /*initialState=*/y0,
-                /*t0=*/2.5, opts),
-            static_cast<uint8_t>(Status::SUCCESS));
-
-  State state = y0;
-  for (int i = 0; i < n; ++i) {
-    ASSERT_EQ(integrator.step(state, dt, opts), static_cast<uint8_t>(Status::SUCCESS));
-  }
-
-  EXPECT_DOUBLE_EQ(integrator.time(), 2.5 + n * dt);
-  EXPECT_NEAR(state, y0, 1e-15);
-
-  const auto& stats = integrator.stats();
-  EXPECT_EQ(stats.functionEvals, static_cast<std::size_t>(3 * n));
-  EXPECT_EQ(stats.jacobianEvals, static_cast<std::size_t>(n));
-  EXPECT_EQ(stats.linearSolveCalls, static_cast<std::size_t>(n));
+/** @test Converges at third order on a derivative that depends on state and time */
+TEST(AdamsMoultonTest, ConvergesAtThirdOrder) {
+  const double measured = observedOrder(errorAtOne, 80);
+  EXPECT_GT(measured, 2.8);
+  EXPECT_LT(measured, 3.3);
 }

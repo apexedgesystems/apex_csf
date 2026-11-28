@@ -14,27 +14,38 @@ namespace integration {
 /* --------------------------- BDF2 Implementation ------------------------- */
 
 template <typename State, typename Options>
-uint8_t BDF2<State, Options>::initializeImpl(Func f, const State& initialState, double t0,
+uint8_t BDF2<State, Options>::initializeImpl(Func f, const State& /*initialState*/, double t0,
                                              const Options& /*opts*/) noexcept {
   this->stats_ = Stats{};
   this->t_ = t0;
   f_ = std::move(f);
-
-  xNm2_ = initialState;
-  xNm1_ = initialState;
+  haveHistory_ = false;
   return static_cast<uint8_t>(Status::SUCCESS);
 }
 
 template <typename State, typename Options>
 uint8_t BDF2<State, Options>::stepImpl(State& state, double t, double dt,
                                        const Options& opts) noexcept {
-  State xNew = xNm1_;
+  // The two-step formula needs the state one step back. The first step has
+  // none, so it is the one-step rule
+  //   x_1 = x_0 + dt * ((1/3) f(x_0) + (2/3) f(x_1)),
+  // whose Newton matrix, I - (2/3)*dt*df/dx, is the one the caller supplies
+  // for every other step.
+  State fStart{};
+  if (!haveHistory_) {
+    fStart = f_(state, t);
+    ++this->stats_.functionEvals;
+  }
+
+  State xNew = state;
 
   for (std::size_t iter = 0; iter < opts.maxIterations; ++iter) {
     State fx = f_(xNew, t + dt);
     ++this->stats_.functionEvals;
 
-    State R = xNew - ((xNm1_ * (4.0 / 3.0)) - (xNm2_ * (1.0 / 3.0))) - (fx * ((2.0 / 3.0) * dt));
+    State R = haveHistory_ ? xNew - ((state * (4.0 / 3.0)) - (xPrev_ * (1.0 / 3.0))) -
+                                 (fx * ((2.0 / 3.0) * dt))
+                           : xNew - state - ((fStart * (1.0 / 3.0) + fx * (2.0 / 3.0)) * dt);
 
     auto J = opts.computeJacobian(xNew, t + dt);
     ++this->stats_.jacobianEvals;
@@ -45,9 +56,9 @@ uint8_t BDF2<State, Options>::stepImpl(State& state, double t, double dt,
     xNew += delta;
 
     if (opts.converged(delta, R)) {
-      xNm2_ = xNm1_;
-      xNm1_ = xNew;
+      xPrev_ = state;
       state = xNew;
+      haveHistory_ = true;
       return static_cast<uint8_t>(Status::SUCCESS);
     }
   }

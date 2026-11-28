@@ -60,7 +60,7 @@ public:
    *
    * @param state On entry: x_n; on exit: x_{n+1}.
    * @param t     Current time t_n.
-   * @param dt    Step size (must be > 0).
+   * @param dt    Step size (positive and finite).
    * @param opts  RungeKutta4Options (ignored).
    * @return      uint8_t status code (0 on success).
    */

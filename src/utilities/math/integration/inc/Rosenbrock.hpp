@@ -9,12 +9,13 @@
  *
  * Methods:
  *  - ROS2: Second-order, L-stable
- *  - ROS3P: Third-order, L-stable
- *  - ROS34PW2: Third-order, embedded error estimation
+ *  - ROS3: Third-order, L-stable
  *
  * Use cases: Chemical kinetics, battery management, thermal systems.
  * @note RT-safe with RT-safe callbacks.
  */
+
+#include "src/utilities/math/integration/inc/StepSize.hpp"
 
 #include <cmath>
 #include <cstddef>
@@ -29,9 +30,7 @@ namespace integration {
 
 enum class RosenbrockStatus : uint8_t {
   SUCCESS = 0,
-  ERROR_INVALID_STEP = 1,
-  ERROR_JACOBIAN_FAILURE = 2,
-  ERROR_LINEAR_SOLVER = 3
+  ERROR_INVALID_STEP = 1 ///< Step size is not positive and finite.
 };
 
 /* ------------------------------ ROS2 Options ------------------------------ */
@@ -60,6 +59,19 @@ template <typename State> struct RosenbrockOptions {
    * @return Solution k.
    */
   std::function<State(const State& matrix, const State& rhs)> linearSolve;
+
+  /**
+   * @brief Partial derivative of f with respect to time, df/dt at (x, t).
+   *
+   * Leave empty when f does not depend on time. A Rosenbrock method uses
+   * df/dt as it uses the Jacobian. For a time-dependent f stepped without
+   * it, ROS3 falls to about first order, and ROS2 falls to first order on
+   * stiff problems.
+   * @param x Current state.
+   * @param t Current time.
+   * @return df/dt with the state held fixed.
+   */
+  std::function<State(const State& x, double t)> timeDerivative;
 };
 
 /* ---------------------------------- ROS2 ---------------------------------- */
@@ -67,11 +79,14 @@ template <typename State> struct RosenbrockOptions {
 /**
  * @brief ROS2: Second-order L-stable Rosenbrock method.
  *
- * Two-stage method with only one matrix factorization per step.
+ * Two-stage method with only one matrix factorization per step, with
+ * gamma = 1 + 1/sqrt(2). Without the f_t terms the method is still second
+ * order on a time-dependent problem that is not stiff; the f_t terms are
+ * the method applied to the system extended by t' = 1.
  *
- * Algorithm:
- *   (I - gamma*dt*J) * k1 = f(y_n)
- *   (I - gamma*dt*J) * k2 = f(y_n + dt*k1) - 2*k1
+ * Algorithm, with f_t = df/dt at (y_n, t_n) when opts.timeDerivative is set:
+ *   (I - gamma*dt*J) * k1 = f(y_n, t_n)               + gamma*dt*f_t
+ *   (I - gamma*dt*J) * k2 = f(y_n + dt*k1, t_n + dt) - 2*k1 - gamma*dt*f_t
  *   y_{n+1} = y_n + (3/2)*dt*k1 + (1/2)*dt*k2
  *
  * @tparam State State type.
@@ -114,7 +129,7 @@ public:
    * @return Status code.
    */
   uint8_t step(State& y, double dt, const RosenbrockOptions<State>& opts) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(RosenbrockStatus::ERROR_INVALID_STEP);
     }
 
@@ -124,19 +139,26 @@ public:
     auto matrix = opts.computeMatrix(y, t_, GAMMA_DT);
     ++stats_.matrixEvals;
 
-    // Stage 1: (I - gamma*dt*J) * k1 = f(y)
-    State f0 = f_(y, t_);
+    // Stage 1: (I - gamma*dt*J) * k1 = f(y) + gamma*dt*f_t
+    State rhs1 = f_(y, t_);
     ++stats_.functionEvals;
 
-    State k1 = opts.linearSolve(matrix, f0);
+    // The time-derivative terms of the two stages are equal and opposite
+    State ftTerm{};
+    if (opts.timeDerivative) {
+      ftTerm = opts.timeDerivative(y, t_) * GAMMA_DT;
+      rhs1 = rhs1 + ftTerm;
+    }
+
+    State k1 = opts.linearSolve(matrix, rhs1);
     ++stats_.linearSolves;
 
-    // Stage 2: (I - gamma*dt*J) * k2 = f(y + dt*k1) - 2*k1
+    // Stage 2: (I - gamma*dt*J) * k2 = f(y + dt*k1) - 2*k1 - gamma*dt*f_t
     State y1 = y + k1 * dt;
     State f1 = f_(y1, t_ + dt);
     ++stats_.functionEvals;
 
-    State rhs2 = f1 - k1 * 2.0;
+    State rhs2 = f1 - k1 * 2.0 - ftTerm;
     State k2 = opts.linearSolve(matrix, rhs2);
     ++stats_.linearSolves;
 
@@ -162,19 +184,40 @@ private:
   Stats stats_{};
 };
 
-/* --------------------------------- ROS3P ---------------------------------- */
+/* ---------------------------------- ROS3 ---------------------------------- */
 
 /**
- * @brief ROS3P: Third-order L-stable Rosenbrock method.
+ * @brief ROS3: Third-order L-stable Rosenbrock method.
  *
- * Three-stage method with one matrix factorization.
- * Higher accuracy than ROS2 with similar cost.
+ * Three stages, one matrix factorization and two derivative evaluations per
+ * step (the third stage is evaluated at the second stage's point). The
+ * method is defined by gamma, gamma_21, gamma_32 and the weights b_1..b_3,
+ * with alpha_21 = alpha_31 = gamma and alpha_32 = gamma_31 = 0.
+ *
+ * Algorithm, with W = I - gamma*dt*J, f_t = df/dt at (y_n, t_n) when
+ * opts.timeDerivative is set, and each k_i in the units of f:
+ *   W * k1 = f(y_n, t_n)                              + dt*D1*f_t
+ *   W * k2 = f(y_n + dt*A21*k1, t_n + gamma*dt)       + C21*k1          + dt*D2*f_t
+ *   W * k3 = f(y_n + dt*A21*k1, t_n + gamma*dt)       + C31*k1 + C32*k2 + dt*D3*f_t
+ *   y_{n+1} = y_n + dt*(M1*k1 + M2*k2 + M3*k3)
+ *
+ * This is the form that needs no product of the Jacobian with a vector,
+ * only solves with W, which is all the options provide. Its coefficients
+ * follow from the defining ones (gamma_ij, alpha_ij, b_i) by
+ * C = -gamma*offdiag(G^-1), A = gamma*alpha*G^-1, M = gamma*b*G^-1, with G
+ * the lower-triangular matrix of gamma_ij; D_i is the i-th row sum of G.
+ * The constants below are those expressions evaluated in extended
+ * precision.
+ *
+ * Third order needs opts.timeDerivative when f depends on time. On a stiff
+ * problem at a step far above its fastest time constant the observed order
+ * is below three until the step is small enough to resolve it.
  *
  * @tparam State State type.
  *
  * @note RT-safe with RT-safe callbacks.
  */
-template <typename State> class ROS3P {
+template <typename State> class ROS3 {
 public:
   struct Stats {
     std::size_t functionEvals{0};
@@ -183,18 +226,27 @@ public:
     std::size_t steps{0};
   };
 
-  // ROS3P coefficients (Hairer-Wanner)
-  static constexpr double GAMMA = 0.43586652150845899942;
-  static constexpr double A21 = 0.43586652150845899942;
-  static constexpr double A31 = 0.43586652150845899942;
-  static constexpr double A32 = 0.0;
-  static constexpr double C21 = -0.19294655696029095575;
-  static constexpr double C31 = 0.0;
-  static constexpr double C32 = 1.74927148125420818960;
-  static constexpr double M1 = -0.75457412385404315829;
-  static constexpr double M2 = -0.43586652150845899942;
-  static constexpr double M3 = 0.19034761532769155505;
+  // The root of g^3 - 3g^2 + (3/2)g - 1/6 = 0 for which the method is L-stable
+  static constexpr double GAMMA = 0.435866521508458999416;
+  static constexpr double A21 = GAMMA;
+  static constexpr double C21 = -0.442673496217456978751;
+  static constexpr double C31 = 1.776590043580387551808;
+  static constexpr double C32 = 4.013319204246335278426;
+  static constexpr double M1 = GAMMA;
+  static constexpr double M2 = 2.689206956220652834789;
+  static constexpr double M3 = -0.186429946765601044630;
+  static constexpr double D1 = GAMMA;
+  static constexpr double D2 = 0.242919964548168043666;
+  static constexpr double D3 = 2.185138002766405851151;
 
+  /**
+   * @brief Initialize the integrator.
+   *
+   * @tparam Func Derivative function: State(const State& y, double t)
+   * @param f Derivative function.
+   * @param y0 Initial state.
+   * @param t0 Initial time.
+   */
   template <typename Func>
   void initialize(Func&& f, [[maybe_unused]] const State& y0, double t0) noexcept {
     f_ = std::forward<Func>(f);
@@ -202,8 +254,16 @@ public:
     stats_ = Stats{};
   }
 
+  /**
+   * @brief Perform one ROS3 step.
+   *
+   * @param y State (modified in place).
+   * @param dt Time step.
+   * @param opts Rosenbrock options.
+   * @return Status code.
+   */
   uint8_t step(State& y, double dt, const RosenbrockOptions<State>& opts) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(RosenbrockStatus::ERROR_INVALID_STEP);
     }
 
@@ -214,32 +274,29 @@ public:
     ++stats_.matrixEvals;
 
     // Stage 1
-    State f0 = f_(y, t_);
+    State rhs1 = f_(y, t_);
     ++stats_.functionEvals;
 
-    State k1 = opts.linearSolve(matrix, f0);
-    ++stats_.linearSolves;
+    // Stages 2 and 3 share one derivative: both are evaluated at y_n + dt*A21*k1
+    State rhs2{};
+    State rhs3{};
+    if (opts.timeDerivative) {
+      const State ft = opts.timeDerivative(y, t_);
+      rhs1 = rhs1 + ft * (D1 * dt);
+      rhs2 = ft * (D2 * dt);
+      rhs3 = ft * (D3 * dt);
+    }
 
-    // Stage 2
-    State y2 = y + k1 * (A21 * dt);
-    State f2 = f_(y2, t_ + A21 * dt);
+    const State k1 = opts.linearSolve(matrix, rhs1);
+
+    const State f2 = f_(y + k1 * (A21 * dt), t_ + GAMMA_DT);
     ++stats_.functionEvals;
 
-    State rhs2 = f2 + k1 * (C21 / dt);
-    State k2 = opts.linearSolve(matrix, rhs2);
-    ++stats_.linearSolves;
+    const State k2 = opts.linearSolve(matrix, rhs2 + f2 + k1 * C21);
+    const State k3 = opts.linearSolve(matrix, rhs3 + f2 + k1 * C31 + k2 * C32);
+    stats_.linearSolves += 3;
 
-    // Stage 3
-    State y3 = y + k1 * (A31 * dt) + k2 * (A32 * dt);
-    State f3 = f_(y3, t_ + (A31 + A32) * dt);
-    ++stats_.functionEvals;
-
-    State rhs3 = f3 + k1 * (C31 / dt) + k2 * (C32 / dt);
-    State k3 = opts.linearSolve(matrix, rhs3);
-    ++stats_.linearSolves;
-
-    // Update
-    y = y + k1 * (M1 * dt) + k2 * (M2 * dt) + k3 * (M3 * dt);
+    y = y + (k1 * M1 + k2 * M2 + k3 * M3) * dt;
 
     t_ += dt;
     ++stats_.steps;

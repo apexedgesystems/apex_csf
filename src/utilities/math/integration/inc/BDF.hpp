@@ -4,15 +4,26 @@
  * @file BDF.hpp
  * @brief Backward Differentiation Formulas (BDF1-BDF6) for stiff systems.
  *
- * Multi-step implicit methods with increasing order and stability.
+ * Multi-step implicit methods of increasing order.
  * Industry standard for stiff ODEs in chemical, thermal, and control systems.
+ * The formula of order q is the one of its shape that is exact for
+ * polynomials of degree q.
  *
  * Stability: BDF1-2 are A-stable, BDF3-6 are stiffly stable.
+ *
+ * Accuracy at a constant step: the integrator starts with one BDF1 step and
+ * raises the order by one per step. That first step's local error is
+ * O(dt^2), so a run converges at second order whatever MaxOrder is, and a
+ * MaxOrder above 2 does not make it more accurate. The exception is a
+ * solution that is flat at the start (its low derivatives vanish there):
+ * the start-up steps are then nearly exact and the order-k formula's own
+ * order is reached.
  * @note RT-safe with RT-safe callbacks.
  */
 
 #include "src/utilities/math/integration/inc/Integration.hpp"
 #include "src/utilities/math/integration/inc/IntegrationOptions.hpp"
+#include "src/utilities/math/integration/inc/StepSize.hpp"
 
 #include <array>
 #include <cstddef>
@@ -36,6 +47,17 @@ namespace integration {
  *   BDF2: 3/2*y_{n+1} - 2*y_n + 1/2*y_{n-1} = dt * f(y_{n+1})
  *   BDF3-6: Higher-order analogs
  *
+ * The formula of order k has the Newton matrix alpha_k*I - dt*df/dx, where
+ * alpha_k is the coefficient of y_{n+1} (1, 3/2, 11/6, ...). That matrix is
+ * what opts.computeJacobian must return, for the order the step about to be
+ * taken uses: read alpha_k from leadingCoefficient() before each step. The
+ * order changes while it ramps up, so a matrix built once is wrong for the
+ * steps after the first.
+ *
+ * The step size must be the same on every step. y_n is the state passed to
+ * step(). After a jump in the state or a change of step size, call reset()
+ * or initialize() so the order ramps up again from one.
+ *
  * @tparam State State type.
  * @tparam MaxOrder Maximum order (1-6, default 6).
  * @tparam Options Options type (ImplicitOptions or ImplicitOptionsRT).
@@ -43,7 +65,11 @@ namespace integration {
  * Example:
  * @code
  *   BDF<double, 4> integrator;  // Up to BDF4
- *   // ... configure options with Jacobian, linear solver, convergence test
+ *   ImplicitOptions<double> opts;
+ *   opts.computeJacobian = [&](const double& x, double t) {
+ *     return integrator.leadingCoefficient() - dt * dfdx(x, t);
+ *   };
+ *   // ... linear solver, convergence test
  *   integrator.initialize(f, y0, t0);
  *
  *   for (int i = 0; i < 100; ++i) {
@@ -67,8 +93,16 @@ public:
     std::size_t steps{0};
   };
 
-  /** @brief Current order being used. */
+  /** @brief Order of the formula the next step uses. */
   std::size_t currentOrder() const noexcept { return order_; }
+
+  /**
+   * @brief Coefficient alpha_k of y_{n+1} in the formula the next step uses.
+   *
+   * The Newton matrix of that step is leadingCoefficient()*I - dt*df/dx.
+   * @note RT-safe: O(1).
+   */
+  double leadingCoefficient() const noexcept { return ALPHA[order_]; }
 
   /**
    * @brief Initialize the integrator.
@@ -96,7 +130,7 @@ public:
    * @return Status code.
    */
   uint8_t step(State& state, double dt, const Options& opts) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(Status::ERROR_INVALID_STEP);
     }
 

@@ -15,6 +15,8 @@
  * @note RT-safe: Zero allocation, fixed evaluations per step.
  */
 
+#include "src/utilities/math/integration/inc/StepSize.hpp"
+
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -25,7 +27,12 @@ namespace integration {
 
 /* -------------------------------- Status ---------------------------------- */
 
-enum class RKNStatus : uint8_t { SUCCESS = 0, ERROR_INVALID_STEP = 1 };
+enum class RKNStatus : uint8_t {
+  SUCCESS = 0,
+  ERROR_INVALID_STEP = 1, ///< Step size is not positive and finite.
+  STEP_REJECTED = 2,      ///< Adaptive step rejected: state and time unchanged, retry with dtNext.
+  ERROR_NON_FINITE = 3    ///< The acceleration produced a NaN or the step overflowed.
+};
 
 /* ---------------------------------- RKN4 ---------------------------------- */
 
@@ -42,6 +49,9 @@ enum class RKNStatus : uint8_t { SUCCESS = 0, ERROR_INVALID_STEP = 1 };
  *   k4 = f(t_n + h, y_n + h*y'_n + h^2*k3/2, y'_n + h*k3)
  *   y_{n+1} = y_n + h*y'_n + h^2*(k1 + k2 + k3)/6
  *   y'_{n+1} = y'_n + h*(k1 + 2*k2 + 2*k3 + k4)/6
+ *
+ * The third stage's position uses k1: with k2 there the rule is third
+ * order.
  *
  * @tparam State State type for position and velocity.
  *
@@ -74,14 +84,14 @@ public:
    * @tparam AccelFunc Callable: State(double t, const State& y, const State& v)
    * @param y Position (modified in place).
    * @param v Velocity (modified in place).
-   * @param dt Time step (must be positive).
+   * @param dt Time step (positive and finite).
    * @param accel Acceleration function of (time, position, velocity).
    * @return Status code.
    * @note RT-safe: O(1), 4 function evaluations.
    */
   template <typename AccelFunc>
   uint8_t step(State& y, State& v, double dt, AccelFunc&& accel) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(RKNStatus::ERROR_INVALID_STEP);
     }
 
@@ -140,8 +150,23 @@ private:
 /**
  * @brief Sixth-order Runge-Kutta-Nystrom integrator.
  *
- * Higher accuracy for smooth problems with 7 evaluations per step.
- * Coefficients from Dormand-Prince-Nystrom family.
+ * Seven evaluations per step, for an acceleration that may depend on
+ * position, velocity and time. The step is a seven-stage sixth-order
+ * explicit Runge-Kutta method applied to y' = v, v' = f(t, y, v) and
+ * written in Nystrom form: with A, b, c the Runge-Kutta coefficients, the
+ * velocity stages use A and b and the position stages use A.A and b.A:
+ *
+ *   y_i = y + c_i*dt*v + dt^2 * sum_j (A.A)_ij * k_j
+ *   v_i = v + dt * sum_j A_ij * k_j,        k_i = f(t + c_i*dt, y_i, v_i)
+ *   y+  = y + dt*v + dt^2 * sum_i (b.A)_i * k_i
+ *   v+  = v + dt * sum_i b_i * k_i
+ *
+ * Nodes c = (0, 1/2, 2/3, 1/3, 5/6, 1/6, 1), weights
+ * b = (13/200, 0, 11/40, 11/40, 4/25, 4/25, 13/200): every node lies inside
+ * the step and no weight is negative. The velocity coefficients below are
+ * the array A; the position coefficients are its products A.A and b.A. The
+ * array satisfies all 37 order conditions of a sixth-order method (one per
+ * rooted tree of up to six nodes).
  *
  * @tparam State State type.
  *
@@ -166,103 +191,107 @@ public:
    */
   template <typename AccelFunc>
   uint8_t step(State& y, State& v, double dt, AccelFunc&& accel) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(RKNStatus::ERROR_INVALID_STEP);
     }
 
     const double DT_SQ = dt * dt;
 
+    // Nodes
+    constexpr double C2 = 1.0 / 2.0;
+    constexpr double C3 = 2.0 / 3.0;
+    constexpr double C4 = 1.0 / 3.0;
+    constexpr double C5 = 5.0 / 6.0;
+    constexpr double C6 = 1.0 / 6.0;
+
     // Stage 1
-    State k1 = accel(t_, y, v);
-    ++stats_.functionEvals;
+    const State k1 = accel(t_, y, v);
 
-    // Stage 2: c2 = 1/10
-    constexpr double C2 = 0.1;
-    constexpr double A21 = 0.005; // 1/200
-    constexpr double B21 = 0.1;
-    State y2 = y + v * (C2 * dt) + k1 * (A21 * DT_SQ);
-    State v2 = v + k1 * (B21 * dt);
-    State k2 = accel(t_ + C2 * dt, y2, v2);
-    ++stats_.functionEvals;
+    // Stage 2. Its position has no acceleration term: A.A is zero in this row.
+    constexpr double B21 = 1.0 / 2.0;
+    const State y2 = y + v * (C2 * dt);
+    const State v2 = v + k1 * (B21 * dt);
+    const State k2 = accel(t_ + C2 * dt, y2, v2);
 
-    // Stage 3: c3 = 1/5
-    constexpr double C3 = 0.2;
-    constexpr double A31 = 2.0 / 75.0;
-    constexpr double A32 = 4.0 / 75.0;
-    constexpr double B31 = 1.0 / 15.0;
-    constexpr double B32 = 2.0 / 15.0;
-    State y3 = y + v * (C3 * dt) + (k1 * A31 + k2 * A32) * DT_SQ;
-    State v3 = v + (k1 * B31 + k2 * B32) * dt;
-    State k3 = accel(t_ + C3 * dt, y3, v3);
-    ++stats_.functionEvals;
+    // Stage 3
+    constexpr double A31 = 2.0 / 9.0;
+    constexpr double B31 = 2.0 / 9.0;
+    constexpr double B32 = 4.0 / 9.0;
+    const State y3 = y + v * (C3 * dt) + k1 * (A31 * DT_SQ);
+    const State v3 = v + (k1 * B31 + k2 * B32) * dt;
+    const State k3 = accel(t_ + C3 * dt, y3, v3);
 
-    // Stage 4: c4 = 3/5
-    constexpr double C4 = 0.6;
-    constexpr double A41 = 171.0 / 1960.0;
-    constexpr double A42 = 171.0 / 490.0;
-    constexpr double A43 = 27.0 / 392.0;
-    constexpr double B41 = 12.0 / 35.0;
-    constexpr double B42 = 6.0 / 35.0;
-    constexpr double B43 = 6.0 / 35.0;
-    State y4 = y + v * (C4 * dt) + (k1 * A41 + k2 * A42 + k3 * A43) * DT_SQ;
-    State v4 = v + (k1 * B41 + k2 * B42 + k3 * B43) * dt;
-    State k4 = accel(t_ + C4 * dt, y4, v4);
-    ++stats_.functionEvals;
+    // Stage 4
+    constexpr double A41 = 5.0 / 54.0;
+    constexpr double A42 = -1.0 / 27.0;
+    constexpr double B41 = 7.0 / 36.0;
+    constexpr double B42 = 2.0 / 9.0;
+    constexpr double B43 = -1.0 / 12.0;
+    const State y4 = y + v * (C4 * dt) + (k1 * A41 + k2 * A42) * DT_SQ;
+    const State v4 = v + (k1 * B41 + k2 * B42 + k3 * B43) * dt;
+    const State k4 = accel(t_ + C4 * dt, y4, v4);
 
-    // Stage 5: c5 = 2/3
-    constexpr double C5 = 2.0 / 3.0;
-    constexpr double A51 = 32.0 / 405.0;
-    constexpr double A52 = 320.0 / 2187.0;
-    constexpr double A53 = 8.0 / 729.0;
-    constexpr double A54 = 152.0 / 2187.0;
-    constexpr double B51 = 16.0 / 81.0;
-    constexpr double B53 = 4.0 / 27.0;
-    constexpr double B54 = 16.0 / 81.0;
-    State y5 = y + v * (C5 * dt) + (k1 * A51 + k2 * A52 + k3 * A53 + k4 * A54) * DT_SQ;
-    State v5 = v + (k1 * B51 + k3 * B53 + k4 * B54) * dt;
-    State k5 = accel(t_ + C5 * dt, y5, v5);
-    ++stats_.functionEvals;
+    // Stage 5
+    constexpr double A51 = -205.0 / 864.0;
+    constexpr double A52 = 20.0 / 27.0;
+    constexpr double A53 = -5.0 / 32.0;
+    constexpr double B51 = -35.0 / 144.0;
+    constexpr double B52 = -55.0 / 36.0;
+    constexpr double B53 = 35.0 / 48.0;
+    constexpr double B54 = 15.0 / 8.0;
+    const State y5 = y + v * (C5 * dt) + (k1 * A51 + k2 * A52 + k3 * A53) * DT_SQ;
+    const State v5 = v + (k1 * B51 + k2 * B52 + k3 * B53 + k4 * B54) * dt;
+    const State k5 = accel(t_ + C5 * dt, y5, v5);
 
-    // Stage 6: c6 = 4/5
-    constexpr double C6 = 0.8;
-    constexpr double A61 = 3953.0 / 26040.0;
-    constexpr double A62 = 400.0 / 1989.0;
-    constexpr double A64 = 2581.0 / 3315.0;
-    constexpr double A65 = -9.0 / 26.0;
-    constexpr double B61 = 25.0 / 51.0;
-    constexpr double B64 = 100.0 / 153.0;
-    constexpr double B65 = -125.0 / 306.0;
-    State y6 = y + v * (C6 * dt) + (k1 * A61 + k2 * A62 + k4 * A64 + k5 * A65) * DT_SQ;
-    State v6 = v + (k1 * B61 + k4 * B64 + k5 * B65) * dt;
-    State k6 = accel(t_ + C6 * dt, y6, v6);
-    ++stats_.functionEvals;
+    // Stage 6
+    constexpr double A61 = -31.0 / 288.0;
+    constexpr double A62 = -7.0 / 72.0;
+    constexpr double A63 = 1.0 / 32.0;
+    constexpr double A64 = 3.0 / 16.0;
+    constexpr double B61 = -1.0 / 360.0;
+    constexpr double B62 = -11.0 / 36.0;
+    constexpr double B63 = -1.0 / 8.0;
+    constexpr double B64 = 1.0 / 2.0;
+    constexpr double B65 = 1.0 / 10.0;
+    const State y6 = y + v * (C6 * dt) + (k1 * A61 + k2 * A62 + k3 * A63 + k4 * A64) * DT_SQ;
+    const State v6 = v + (k1 * B61 + k2 * B62 + k3 * B63 + k4 * B64 + k5 * B65) * dt;
+    const State k6 = accel(t_ + C6 * dt, y6, v6);
 
-    // Stage 7: c7 = 1
-    constexpr double A71 = 1593.0 / 10920.0;
-    constexpr double A74 = 737.0 / 936.0;
-    constexpr double A75 = -11.0 / 52.0;
-    constexpr double A76 = 143.0 / 780.0;
-    constexpr double B71 = 1.0 / 6.0;
-    constexpr double B74 = 2.0 / 3.0;
-    constexpr double B76 = 1.0 / 6.0;
-    State y7 = y + v * dt + (k1 * A71 + k4 * A74 + k5 * A75 + k6 * A76) * DT_SQ;
-    State v7 = v + (k1 * B71 + k4 * B74 + k6 * B76) * dt;
-    State k7 = accel(t_ + dt, y7, v7);
-    ++stats_.functionEvals;
+    // Stage 7, at the end of the step
+    constexpr double A71 = 32.0 / 117.0;
+    constexpr double A72 = -167.0 / 117.0;
+    constexpr double A73 = 3.0 / 26.0;
+    constexpr double A74 = 4.0 / 3.0;
+    constexpr double A75 = 8.0 / 39.0;
+    constexpr double B71 = -41.0 / 260.0;
+    constexpr double B72 = 22.0 / 13.0;
+    constexpr double B73 = 43.0 / 156.0;
+    constexpr double B74 = -118.0 / 39.0;
+    constexpr double B75 = 32.0 / 195.0;
+    constexpr double B76 = 80.0 / 39.0;
+    const State y7 = y + v * dt + (k1 * A71 + k2 * A72 + k3 * A73 + k4 * A74 + k5 * A75) * DT_SQ;
+    const State v7 = v + (k1 * B71 + k2 * B72 + k3 * B73 + k4 * B74 + k5 * B75 + k6 * B76) * dt;
+    const State k7 = accel(t_ + dt, y7, v7);
 
-    // Final update using 6th-order weights
-    constexpr double BY1 = 1.0 / 20.0;
-    constexpr double BY4 = 64.0 / 75.0;
-    constexpr double BY6 = 1.0 / 20.0;
-    constexpr double BY7 = 2.0 / 75.0;
+    stats_.functionEvals += 7;
 
-    constexpr double BV1 = 1.0 / 12.0;
-    constexpr double BV4 = 64.0 / 75.0;
-    constexpr double BV5 = -27.0 / 100.0;
-    constexpr double BV7 = 1.0 / 6.0;
+    // Position weights (b.A) and velocity weights (b)
+    constexpr double BY1 = 13.0 / 200.0;
+    constexpr double BY3 = 11.0 / 120.0;
+    constexpr double BY4 = 11.0 / 60.0;
+    constexpr double BY5 = 2.0 / 75.0;
+    constexpr double BY6 = 2.0 / 15.0;
 
-    y = y + v * dt + (k1 * BY1 + k4 * BY4 + k6 * BY6 + k7 * BY7) * DT_SQ;
-    v = v + (k1 * BV1 + k4 * BV4 + k5 * BV5 + k7 * BV7) * dt;
+    constexpr double BV1 = 13.0 / 200.0;
+    constexpr double BV3 = 11.0 / 40.0;
+    constexpr double BV4 = 11.0 / 40.0;
+    constexpr double BV5 = 4.0 / 25.0;
+    constexpr double BV6 = 4.0 / 25.0;
+    constexpr double BV7 = 13.0 / 200.0;
+
+    const State yNew = y + v * dt + (k1 * BY1 + k3 * BY3 + k4 * BY4 + k5 * BY5 + k6 * BY6) * DT_SQ;
+    v = v + (k1 * BV1 + k3 * BV3 + k4 * BV4 + k5 * BV5 + k6 * BV6 + k7 * BV7) * dt;
+    y = yNew;
 
     t_ += dt;
     ++stats_.steps;
@@ -328,13 +357,17 @@ public:
    * @param dt Proposed step size.
    * @param accel Acceleration function.
    * @param opts Tolerance options.
-   * @return Result with status, error, and suggested next dt.
+   * @return Result with status, error, and suggested next dt. SUCCESS only
+   *         when the step was taken. STEP_REJECTED when the error estimate
+   *         exceeds the tolerance, and ERROR_NON_FINITE when it is NaN or
+   *         infinite: in both, y, v and time() are unchanged, and dtNext is
+   *         a smaller step to retry with (no lower than dtMin).
    */
   template <typename AccelFunc>
   Result step(State& y, State& v, double dt, AccelFunc&& accel, const Options& opts) noexcept {
     Result result;
 
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       result.status = RKNStatus::ERROR_INVALID_STEP;
       result.dtNext = opts.dtMin;
       return result;
@@ -376,6 +409,14 @@ public:
 
     result.errorEstimate = computeNorm(errY, errV, yNew, vNew, opts);
 
+    // A NaN compares false with everything: without this test it would be
+    // handled as a rejection with a NaN step suggestion.
+    if (!std::isfinite(result.errorEstimate)) {
+      result.status = RKNStatus::ERROR_NON_FINITE;
+      result.dtNext = std::max(dt * opts.maxShrink, opts.dtMin);
+      return result;
+    }
+
     if (result.errorEstimate <= 1.0) {
       // Accept step
       y = yNew;
@@ -389,6 +430,7 @@ public:
       result.dtNext = std::min(dt * factor, opts.dtMax);
     } else {
       // Reject step
+      result.status = RKNStatus::STEP_REJECTED;
       ++stats_.rejectedSteps;
 
       double factor = opts.safetyFactor * std::pow(result.errorEstimate, -0.2);
@@ -411,6 +453,13 @@ private:
   Stats stats_{};
   double t_{0.0};
 
+  // The larger of two error norms, NaN when either is NaN. std::max returns
+  // its first argument whenever the comparison is false, which drops a NaN
+  // held by the second.
+  static double largerKeepingNan(double a, double b) noexcept {
+    return (a > b || std::isnan(a)) ? a : b;
+  }
+
   double computeNorm(const State& errY, const State& errV, const State& y, const State& v,
                      const Options& opts) const noexcept {
     if constexpr (std::is_arithmetic_v<State>) {
@@ -418,13 +467,13 @@ private:
       double scaleV = opts.absTol + opts.relTol * std::abs(v);
       double normY = std::abs(errY) / scaleY;
       double normV = std::abs(errV) / scaleV;
-      return std::max(normY, normV);
+      return largerKeepingNan(normY, normV);
     } else {
       double scaleY = opts.absTol + opts.relTol * y.normInf();
       double scaleV = opts.absTol + opts.relTol * v.normInf();
       double normY = errY.normInf() / scaleY;
       double normV = errV.normInf() / scaleV;
-      return std::max(normY, normV);
+      return largerKeepingNan(normY, normV);
     }
   }
 };

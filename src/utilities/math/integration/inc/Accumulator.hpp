@@ -10,6 +10,8 @@
  *  - Zero-allocation, O(1) operations
  */
 
+#include "src/utilities/math/integration/inc/StepSize.hpp"
+
 #include <cstddef>
 #include <cstdint>
 
@@ -22,7 +24,11 @@ namespace integration {
 /**
  * @brief Accumulator status codes.
  */
-enum class AccumulatorStatus : uint8_t { SUCCESS = 0, ERROR_INVALID_DT = 1, ERROR_OVERFLOW = 2 };
+enum class AccumulatorStatus : uint8_t {
+  SUCCESS = 0,
+  ERROR_INVALID_DT = 1, ///< Time step is not positive and finite.
+  ERROR_OVERFLOW = 2    ///< Source index is not below the number of sources.
+};
 
 /* ------------------------------ Accumulator ------------------------------ */
 
@@ -85,12 +91,12 @@ public:
    * Uses forward Euler: state += derivative * dt
    *
    * @param derivative Rate of change (e.g., acceleration, velocity).
-   * @param dt Time step in seconds (must be positive).
+   * @param dt Time step in seconds (positive and finite).
    * @return Status code.
    * @note RT-safe: O(1) arithmetic operations.
    */
   constexpr uint8_t accumulate(const State& derivative, double dt) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(AccumulatorStatus::ERROR_INVALID_DT);
     }
     state_ = state_ + derivative * dt;
@@ -113,7 +119,7 @@ public:
    */
   constexpr uint8_t accumulateTrapezoidal(const State& prevDerivative, const State& derivative,
                                           double dt) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(AccumulatorStatus::ERROR_INVALID_DT);
     }
     state_ = state_ + (prevDerivative + derivative) * (0.5 * dt);
@@ -224,7 +230,7 @@ public:
     if (sourceIdx >= N) {
       return static_cast<uint8_t>(AccumulatorStatus::ERROR_OVERFLOW);
     }
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(AccumulatorStatus::ERROR_INVALID_DT);
     }
     state_ = state_ + derivative * dt;
@@ -244,8 +250,15 @@ public:
   constexpr const State& state() const noexcept { return state_; }
   constexpr State& state() noexcept { return state_; }
 
+  /**
+   * @brief Totals of one source.
+   * @param idx Source index (0 to N-1).
+   * @return That source's totals. For an index that names no source, totals
+   *         of zero: nothing was ever accumulated from it.
+   * @note RT-safe: O(1).
+   */
   constexpr const SourceStats& sourceStats(std::size_t idx) const noexcept {
-    return sourceStats_[idx < N ? idx : 0];
+    return idx < N ? sourceStats_[idx] : noSource_;
   }
 
   static constexpr std::size_t maxSources() noexcept { return N; }
@@ -253,6 +266,7 @@ public:
 private:
   State state_{};
   SourceStats sourceStats_[N]{};
+  SourceStats noSource_{}; ///< What sourceStats() refers to for an index outside 0..N-1.
 };
 
 } // namespace integration

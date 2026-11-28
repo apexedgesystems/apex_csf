@@ -5,7 +5,7 @@
  * @brief Explicit Adams-Bashforth multi-step integrator.
  *
  * Efficient explicit method using past derivative history (order 1-4).
- * @note RT-safe: Zero allocation, O(1) per step.
+ * @note RT-safe: Zero allocation, O(1) per step with RT-safe callbacks.
  */
 
 #include "src/utilities/math/integration/inc/Integration.hpp"
@@ -27,7 +27,16 @@ namespace integration {
  *   x_{n+1} = x_n + dt * sum_{i=0}^{k-1} b_i * f_{n-i},
  *   where k = opts.order (1..4).
  *
- * Uses lower-order formula for the first few steps.
+ * The b_i are those for which the formula is exact for polynomials of
+ * degree k.
+ *
+ * One derivative evaluation per step once k derivatives are held. The first
+ * k-1 steps are classical Runge-Kutta steps (four evaluations each), which
+ * build that history accurately enough for the method to converge at order k.
+ *
+ * The step size must be the same on every step: the coefficients are those
+ * of equally spaced history. The state passed to step() must be the state
+ * the previous step returned: the derivative at it is already held.
  *
  * @tparam State   Must support +=, * double, default-constructible.
  * @tparam Options Must be AdamsBashforthOptions<State>.
@@ -48,15 +57,17 @@ public:
                          const Options& opts) noexcept;
 
   /**
-   * @brief One AB step of size dt.
-   * Uses up to opts.order previous f-values.
+   * @brief One step of size dt: Adams-Bashforth of order opts.order, or a
+   *        Runge-Kutta start step while fewer than that many derivatives are held.
    */
   uint8_t stepImpl(State& state, double t, double dt, const Options& opts) noexcept;
 
 private:
+  static constexpr std::size_t MAX_ORDER = 4;
+
   Func f_;
-  std::array<State, 4> fHist_{};
-  std::size_t steps_ = 0;
+  std::array<State, MAX_ORDER> fHist_{}; ///< Derivatives, newest first.
+  std::size_t steps_ = 0;                ///< Steps taken since initialize.
 };
 
 } // namespace integration

@@ -14,34 +14,45 @@ namespace integration {
 /* ----------------------- AdamsMoulton Implementation ---------------------- */
 
 template <typename State, typename Options>
-uint8_t AdamsMoulton<State, Options>::initializeImpl(Func f, const State& initialState, double t0,
-                                                     const Options& /*opts*/) noexcept {
+uint8_t AdamsMoulton<State, Options>::initializeImpl(Func f, const State& /*initialState*/,
+                                                     double t0, const Options& /*opts*/) noexcept {
   this->stats_ = Stats{};
   this->t_ = t0;
   f_ = std::move(f);
-
-  xNm2_ = initialState;
-  xNm1_ = initialState;
+  haveHistory_ = false;
   return static_cast<uint8_t>(Status::SUCCESS);
 }
 
 template <typename State, typename Options>
 uint8_t AdamsMoulton<State, Options>::stepImpl(State& state, double t, double dt,
                                                const Options& opts) noexcept {
-  State fN = f_(state, t);
-  ++this->stats_.functionEvals;
-  State fNm1 = f_(xNm2_, t - dt);
+  const State fN = f_(state, t);
   ++this->stats_.functionEvals;
 
-  State xPred = state + ((fN * 1.5 - fNm1 * 0.5) * dt);
+  if (!haveHistory_) {
+    // Start step: the corrector needs the derivative one step back, and the
+    // first step has none. A classical Runge-Kutta step has a local error of
+    // O(dt^5), which leaves the method at third order; a start that guessed
+    // the missing derivative would hold it to second.
+    const State k2 = f_(state + fN * (0.5 * dt), t + 0.5 * dt);
+    const State k3 = f_(state + k2 * (0.5 * dt), t + 0.5 * dt);
+    const State k4 = f_(state + k3 * dt, t + dt);
+    this->stats_.functionEvals += 3;
 
-  State xNew = xPred;
+    state = state + (fN + k2 * 2.0 + k3 * 2.0 + k4) * (dt / 6.0);
+    fPrev_ = fN;
+    haveHistory_ = true;
+    return static_cast<uint8_t>(Status::SUCCESS);
+  }
+
+  // Predictor: Adams-Bashforth of order two, the first Newton iterate
+  State xNew = state + ((fN * 1.5 - fPrev_ * 0.5) * dt);
 
   for (std::size_t iter = 0; iter < opts.maxIterations; ++iter) {
     State fNew = f_(xNew, t + dt);
     ++this->stats_.functionEvals;
 
-    State R = xNew - state - ((fNew * 5.0 + fN * 8.0 - fNm1) * (dt / 12.0));
+    State R = xNew - state - ((fNew * 5.0 + fN * 8.0 - fPrev_) * (dt / 12.0));
 
     auto J = opts.computeJacobian(xNew, t + dt);
     ++this->stats_.jacobianEvals;
@@ -51,8 +62,7 @@ uint8_t AdamsMoulton<State, Options>::stepImpl(State& state, double t, double dt
 
     xNew += delta;
     if (opts.converged(delta, R)) {
-      xNm2_ = state;
-      xNm1_ = xNew;
+      fPrev_ = fN;
       state = xNew;
       return static_cast<uint8_t>(Status::SUCCESS);
     }

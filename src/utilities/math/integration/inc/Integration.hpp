@@ -11,6 +11,7 @@
  */
 
 #include "src/utilities/math/integration/inc/IntegrationOptions.hpp"
+#include "src/utilities/math/integration/inc/StepSize.hpp"
 
 #include <concepts>
 #include <cstddef>
@@ -36,16 +37,16 @@ concept Derivative = std::invocable<Func, const State&, double> &&
 /* --------------------------------- Status --------------------------------- */
 
 /**
- * @brief Error and status codes used by all integrators.
+ * @brief Status codes of the integrators built on IntegratorBase, and of BDF.
+ *
+ * Every code here is one a step can return. The solver callbacks return a
+ * State and have no way to report a failure of their own, so there is no
+ * code for a failed Jacobian evaluation or linear solve.
  */
 enum class Status : uint8_t {
-  SUCCESS = 0,                /**< Completed successfully. */
-  ERROR_INVALID_STEP = 1,     /**< Provided time-step <= 0. */
-  ERROR_MAX_ITERATIONS = 2,   /**< Implicit solver exceeded max iterations. */
-  ERROR_JACOBIAN_FAILURE = 3, /**< Jacobian evaluation failed or returned NaN. */
-  ERROR_LINEAR_SOLVER = 4,    /**< Linear solver reported failure. */
-  ERROR_CONVERGENCE = 5,      /**< Implicit method did not converge. */
-  ERROR_UNKNOWN = 255         /**< Unspecified error. */
+  SUCCESS = 0,            /**< Step taken. */
+  ERROR_INVALID_STEP = 1, /**< Time-step is not positive and finite. */
+  ERROR_CONVERGENCE = 5   /**< Newton iteration used opts.maxIterations without converging. */
 };
 
 /* ---------------------------------- Stats --------------------------------- */
@@ -95,7 +96,6 @@ public:
   uint8_t initialize(Func&& f, const State& initialState, double t0, const Options& opts) noexcept {
     stats_ = Stats{};
     t_ = t0;
-    options_ = opts;
     return static_cast<uint8_t>(
         static_cast<Derived*>(this)->initializeImpl(std::forward<Func>(f), initialState, t0, opts));
   }
@@ -104,12 +104,12 @@ public:
    * @brief Advance the state by one time step.
    *
    * @param state Current state (modified in-place).
-   * @param dt    Time step size (must be > 0).
+   * @param dt    Time step size (positive and finite; see isValidStep).
    * @param opts  Algorithm-specific options.
    * @return      Status code (0 on success).
    */
   uint8_t step(State& state, double dt, const Options& opts) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       ++stats_.stepRejections;
       return static_cast<uint8_t>(Status::ERROR_INVALID_STEP);
     }
@@ -118,7 +118,6 @@ public:
 
     if (s == static_cast<uint8_t>(Status::SUCCESS)) {
       t_ += dt;
-      options_ = opts;
     }
 
     return s;
@@ -133,7 +132,6 @@ public:
 protected:
   Stats stats_{};
   double t_{};
-  Options options_{};
 };
 
 /* ----------------------- Forward Declarations ----------------------------- */

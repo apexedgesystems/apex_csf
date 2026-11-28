@@ -18,10 +18,9 @@ namespace integration {
 template <typename State, typename Options>
 template <Derivative<State> Func>
 uint8_t ExplicitEuler<State, Options>::initializeImpl(Func&& f, const State& /*initialState*/,
-                                                      double t0, const Options& opts) noexcept {
+                                                      double t0, const Options& /*opts*/) noexcept {
   this->stats_ = Stats{};
   this->t_ = t0;
-  this->options_ = opts;
   f_ = std::forward<Func>(f);
   return static_cast<uint8_t>(Status::SUCCESS);
 }

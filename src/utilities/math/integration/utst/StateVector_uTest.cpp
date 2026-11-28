@@ -13,6 +13,8 @@
 
 #include <cmath>
 
+#include <limits>
+
 using apex::math::integration::State3;
 using apex::math::integration::State6;
 using apex::math::integration::StateVector;
@@ -150,6 +152,23 @@ TEST(StateVector, EuclideanNorm) {
 TEST(StateVector, InfinityNorm) {
   State3 v{1.0, -5.0, 3.0};
   EXPECT_DOUBLE_EQ(v.normInf(), 5.0);
+}
+
+/** @test Returns NaN from the infinity norm when any component is NaN, wherever it sits */
+TEST(StateVector, InfinityNormKeepsNan) {
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  for (std::size_t bad = 0; bad < 3; ++bad) {
+    State3 v{1.0, -5.0, 3.0};
+    v[bad] = nan;
+    EXPECT_TRUE(std::isnan(v.normInf())) << "component " << bad;
+  }
+}
+
+/** @test Returns infinity from the infinity norm for an infinite component of either sign */
+TEST(StateVector, InfinityNormOfInfiniteComponent) {
+  const double inf = std::numeric_limits<double>::infinity();
+  EXPECT_EQ((State3{1.0, -inf, 3.0}).normInf(), inf);
+  EXPECT_EQ((State3{inf, 0.0, 3.0}).normInf(), inf);
 }
 
 /** @test Dot product. */

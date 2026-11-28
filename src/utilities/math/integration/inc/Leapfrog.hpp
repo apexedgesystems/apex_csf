@@ -12,6 +12,8 @@
  * @note RT-safe: Zero allocation, O(1) per step.
  */
 
+#include "src/utilities/math/integration/inc/StepSize.hpp"
+
 #include <cstddef>
 #include <cstdint>
 
@@ -72,14 +74,14 @@ public:
    * @tparam AccelFunc Callable: State(const State& position)
    * @param x Position (modified in place).
    * @param v Velocity (modified in place).
-   * @param dt Time step (must be positive).
+   * @param dt Time step (positive and finite).
    * @param accel Acceleration function of position only.
    * @return Status code.
    * @note RT-safe: O(1), two accel evaluations.
    */
   template <typename AccelFunc>
   uint8_t step(State& x, State& v, double dt, AccelFunc&& accel) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(LeapfrogStatus::ERROR_INVALID_STEP);
     }
 
@@ -158,7 +160,7 @@ public:
    */
   template <typename AccelFunc>
   uint8_t step(State& x, State& v, double dt, AccelFunc&& accel) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(LeapfrogStatus::ERROR_INVALID_STEP);
     }
 
