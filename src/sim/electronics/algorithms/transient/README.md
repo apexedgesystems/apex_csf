@@ -24,8 +24,7 @@ models for reactive elements and a configurable integration scheme.
 6. [Real-Time Considerations](#6-real-time-considerations)
 7. [CLI Tools](#7-cli-tools)
 8. [Example: RC Step Response](#8-example-rc-step-response)
-9. [Migration](#9-migration)
-10. [See Also](#10-see-also)
+9. [See Also](#9-see-also)
 
 ---
 
@@ -438,28 +437,7 @@ int main() {
 
 ---
 
-## 9. Migration
-
-`TransientSolver` and `TransientResult` changed layout, and `stepCuda` its
-signature: rebuild everything that includes `TransientSolver.hpp`,
-`TransientConfig.hpp` or `TransientCuda.cuh` together with the library. Do
-not link or load objects compiled against the earlier headers.
-
-| Earlier                                                                                                  | Now                                                                                                                                                            |
-| -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run()` took one more step when the sum of steps fell short of `tEnd`                                    | Steps are counted: `stepsTaken` and `history.size()` are one fewer in those configurations, and every sample is a step after the one before it.                |
-| `TransientConfig::stepCount()` truncated                                                                 | It is the number of steps `run()` takes; 0 for a configuration `run()` refuses.                                                                                |
-| `TransientConfig::maxStep`, `minStep`, `relTol`, `absTol`, `adaptiveStep`                                | Gone. Nothing read them: there is no adaptive stepping.                                                                                                        |
-| `TransientConfig::maxNonlinearIter`, `nonlinearTol`                                                      | Gone; nothing read them. `TransientSolver::setNewtonIterationLimit()` and `setNewtonTolerances()` set the Newton loop, whose defaults (10; 1e-6 V, 1e-3) stay. |
-| `TransientStatus::ERROR_TIMESTEP_TOO_SMALL`, `ERROR_MATRIX_SINGULAR`                                     | Gone. Nothing returned them.                                                                                                                                   |
-| An unconverged Newton step was accepted with nothing recorded                                            | Still accepted by default, and counted (`unconvergedStepCount()`, `TransientResult::unconvergedSteps`). `setRequireConvergence(true)` refuses it.              |
-| `stepCuda(ws, mna, companions, stamp, dt, time, ...)`, backward Euler always, stamps added to the system | `stepCuda(ws, mna, companions, stamp, dt, method, time, ...)`: the method has no default, and the call clears the system before it stamps.                     |
-| `stepDual()` after a change of step length, or after `invalidateCache()`                                 | Each state follows its own step length, and `invalidateCache()` drops both states' factors.                                                                    |
-| More than sixteen voltage sources: every dense step failed                                               | Stepped; the first step allocates the room.                                                                                                                    |
-
----
-
-## 10. See Also
+## 9. See Also
 
 - [Companions](../companions/README.md) - Reactive-element discretization
 - [MNA library](../mna/README.md) - Linear system construction and solve
