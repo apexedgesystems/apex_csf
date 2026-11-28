@@ -4,8 +4,11 @@
  */
 
 #include "src/system/core/infrastructure/system_component/posix/inc/PluginLoader.hpp"
+#include "src/utilities/helpers/inc/Strings.hpp"
 
 #include <dlfcn.h>
+
+#include <utility>
 
 namespace system_core {
 namespace system_component {
@@ -14,12 +17,13 @@ namespace system_component {
 
 PluginLoader::PluginLoader(PluginLoader&& other) noexcept
     : handle_(other.handle_), createFn_(other.createFn_), destroyFn_(other.destroyFn_),
-      component_(other.component_), path_(std::move(other.path_)), lastError_(other.lastError_) {
+      component_(other.component_), path_(std::move(other.path_)), errorText_(other.errorText_),
+      hasError_(other.hasError_) {
   other.handle_ = nullptr;
   other.createFn_ = nullptr;
   other.destroyFn_ = nullptr;
   other.component_ = nullptr;
-  other.lastError_ = nullptr;
+  other.hasError_ = false;
 }
 
 PluginLoader& PluginLoader::operator=(PluginLoader&& other) noexcept {
@@ -30,14 +34,20 @@ PluginLoader& PluginLoader::operator=(PluginLoader&& other) noexcept {
     destroyFn_ = other.destroyFn_;
     component_ = other.component_;
     path_ = std::move(other.path_);
-    lastError_ = other.lastError_;
+    errorText_ = other.errorText_;
+    hasError_ = other.hasError_;
     other.handle_ = nullptr;
     other.createFn_ = nullptr;
     other.destroyFn_ = nullptr;
     other.component_ = nullptr;
-    other.lastError_ = nullptr;
+    other.hasError_ = false;
   }
   return *this;
+}
+
+void PluginLoader::setError(const char* text) noexcept {
+  apex::helpers::strings::copyToFixedArray(errorText_, text != nullptr ? text : "unknown");
+  hasError_ = true;
 }
 
 std::uint8_t PluginLoader::load(const std::filesystem::path& soPath) noexcept {
@@ -47,7 +57,7 @@ std::uint8_t PluginLoader::load(const std::filesystem::path& soPath) noexcept {
   // dlopen with RTLD_NOW to resolve all symbols immediately.
   handle_ = ::dlopen(soPath.c_str(), RTLD_NOW);
   if (handle_ == nullptr) {
-    lastError_ = ::dlerror();
+    setError(::dlerror());
     return 17; // DLOPEN_FAILED
   }
 
@@ -57,7 +67,7 @@ std::uint8_t PluginLoader::load(const std::filesystem::path& soPath) noexcept {
   // refused while it is still just a handle.
   void* abiSym = ::dlsym(handle_, APEX_PLUGIN_ABI_SYMBOL);
   if (abiSym == nullptr) {
-    lastError_ = "plugin predates ABI versioning (rebuild against current tree)";
+    setError("plugin predates ABI versioning (rebuild against current tree)");
     ::dlclose(handle_);
     handle_ = nullptr;
     return 20; // ABI_MISMATCH
@@ -65,7 +75,7 @@ std::uint8_t PluginLoader::load(const std::filesystem::path& soPath) noexcept {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   const std::uint32_t PLUGIN_ABI = reinterpret_cast<ApexPluginAbiFn>(abiSym)();
   if (PLUGIN_ABI != APEX_PLUGIN_ABI_VERSION) {
-    lastError_ = "plugin ABI version mismatch (rebuild against current tree)";
+    setError("plugin ABI version mismatch (rebuild against current tree)");
     ::dlclose(handle_);
     handle_ = nullptr;
     return 20; // ABI_MISMATCH
@@ -74,7 +84,8 @@ std::uint8_t PluginLoader::load(const std::filesystem::path& soPath) noexcept {
   // Resolve create factory.
   void* createSym = ::dlsym(handle_, APEX_PLUGIN_CREATE_SYMBOL);
   if (createSym == nullptr) {
-    lastError_ = ::dlerror();
+    // The linker's text lives until the next dl* call; dlclose() is one.
+    setError(::dlerror());
     ::dlclose(handle_);
     handle_ = nullptr;
     return 18; // FACTORY_NOT_FOUND
@@ -83,7 +94,7 @@ std::uint8_t PluginLoader::load(const std::filesystem::path& soPath) noexcept {
   // Resolve destroy factory.
   void* destroySym = ::dlsym(handle_, APEX_PLUGIN_DESTROY_SYMBOL);
   if (destroySym == nullptr) {
-    lastError_ = ::dlerror();
+    setError(::dlerror());
     ::dlclose(handle_);
     handle_ = nullptr;
     return 18; // FACTORY_NOT_FOUND
@@ -98,7 +109,7 @@ std::uint8_t PluginLoader::load(const std::filesystem::path& soPath) noexcept {
   // Create the component instance.
   component_ = createFn_();
   if (component_ == nullptr) {
-    lastError_ = "apex_create_component() returned nullptr";
+    setError("apex_create_component() returned nullptr");
     ::dlclose(handle_);
     handle_ = nullptr;
     createFn_ = nullptr;
@@ -107,7 +118,7 @@ std::uint8_t PluginLoader::load(const std::filesystem::path& soPath) noexcept {
   }
 
   path_ = soPath;
-  lastError_ = nullptr;
+  hasError_ = false;
   return 0;
 }
 

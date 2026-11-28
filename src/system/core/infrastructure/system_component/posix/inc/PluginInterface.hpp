@@ -33,7 +33,7 @@
 /// every such change; the loader refuses a plugin whose baked version
 /// differs (or that predates versioning) BEFORE any C++ call, turning
 /// silent vtable skew into a loud load error.
-static constexpr std::uint32_t APEX_PLUGIN_ABI_VERSION = 1;
+static constexpr std::uint32_t APEX_PLUGIN_ABI_VERSION = 2;
 
 /// Name of the ABI-version function exported by plugin .so files.
 static constexpr const char* APEX_PLUGIN_ABI_SYMBOL = "apex_plugin_abi_version";

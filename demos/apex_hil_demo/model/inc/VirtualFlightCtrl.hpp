@@ -96,10 +96,14 @@ protected:
     controller_.init(100.0F); // Default target altitude
     controller_.setMode(hil::ControlMode::HOLD_ALT);
 
-    registerTask<VirtualFlightCtrl, &VirtualFlightCtrl::controlStep>(
-        static_cast<std::uint8_t>(TaskUid::CONTROL_STEP), this, "controlStep");
-    registerTask<VirtualFlightCtrl, &VirtualFlightCtrl::telemetry>(
-        static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry");
+    // Step + telemetry share sequence group 0 (step phase 0, telemetry
+    // phase 1): telemetry reads the counters the step keeps. The TPRM
+    // task table opts in per task.
+    (void)createSequenceGroup(0, 2);
+    registerSequencedTask<VirtualFlightCtrl, &VirtualFlightCtrl::controlStep>(
+        static_cast<std::uint8_t>(TaskUid::CONTROL_STEP), this, "controlStep", 0, 0);
+    registerSequencedTask<VirtualFlightCtrl, &VirtualFlightCtrl::telemetry>(
+        static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry", 0, 1);
 
     registerData(DataCategory::STATE, "state", &state_.get(), sizeof(VfcState));
 

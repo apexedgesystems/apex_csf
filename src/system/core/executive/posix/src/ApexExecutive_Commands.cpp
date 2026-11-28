@@ -15,11 +15,13 @@
 #include "src/system/core/infrastructure/system_component/posix/inc/PackedTprm.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/TprmReadback.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
+#include "src/utilities/helpers/inc/Cpu.hpp"
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerData.hpp"
 
 #include <unistd.h>
 
+#include <atomic>
 #include <cerrno>
 #include <cstring>
 #include <filesystem>
@@ -251,8 +253,8 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
           fileSystem_.inactiveTprmDir(), targetUid, comp->expectedLayoutHash(), response);
       if (VERDICT != system_core::system_component::TprmPayloadCheck::OK) {
         sysLog_->warning(label(), system_core::system_component::toFaultCode(VERDICT),
-                         fmt::format("RELOAD_TPRM refused for 0x{:06X}: staged payload {}",
-                                     targetUid, system_core::system_component::toString(VERDICT)));
+                         fmt::format("RELOAD_TPRM refused for 0x{:06X}: {}", targetUid,
+                                     system_core::system_component::toString(VERDICT)));
         if (auto* sl = fileSystem_.swapLog()) {
           sl->warning("SWAP", system_core::system_component::toFaultCode(VERDICT),
                       fmt::format("RELOAD_TPRM_REFUSED: uid=0x{:06X} verdict={}", targetUid,
@@ -263,14 +265,51 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
       response.clear(); // Verified: the apply outcome is the response.
     }
 
-    // Lock the component so the scheduler skips its tasks during reload.
-    // This prevents data races when loadTprm() modifies shared state
-    // (e.g. scheduler's entries_ and schedule_ vectors).
+    // The load runs on the task thread between cycles, with every
+    // dispatched task settled: it writes state the component's tasks, the
+    // dispatch (the scheduler's tables) and the action phase read. A
+    // dispatch-skip lock alone would not wait for a task already running.
+    // The lock is still taken, so no run of the component's tasks begins
+    // while the request waits.
     comp->lock();
 
     // Load TPRM from inactive bank (C2 uploaded it there via FILE_TRANSFER).
-    if (comp->loadTprm(fileSystem_.inactiveTprmDir()) !=
-        system_core::system_component::TprmIngest::LOADED) {
+    const std::filesystem::path TPRM_SOURCE = fileSystem_.inactiveTprmDir();
+    auto ingest = system_core::system_component::TprmIngest::NONE;
+    bool settled = true;
+    // Both times are of the task thread: how long the request waited for
+    // it, and how long the load then held it between two cycles.
+    std::uint64_t waitNs = 0;
+    std::uint64_t loadNs = 0;
+    if (std::this_thread::get_id() == taskThreadId_.load(std::memory_order_acquire)) {
+      // Reached from an action: this is the task thread, in its action
+      // phase, which runs only once the cycle's tasks have finished.
+      settled = scheduler_.settled();
+      if (settled) {
+        const std::uint64_t LOAD_BEGIN_NS = apex::helpers::cpu::getMonotonicNs();
+        ingest = comp->loadTprm(TPRM_SOURCE);
+        loadNs = apex::helpers::cpu::getMonotonicNs() - LOAD_BEGIN_NS;
+      }
+    } else {
+      const TprmApplyOutcome APPLY = applyTprmAtSettledPoint(*comp, TPRM_SOURCE);
+      settled = APPLY.applied;
+      ingest = APPLY.ingest;
+      waitNs = APPLY.waitNs;
+      loadNs = APPLY.loadNs;
+    }
+    if (!settled) {
+      comp->unlock();
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
+                       fmt::format("RELOAD_TPRM: tasks did not come to rest for 0x{:06X}, "
+                                   "nothing loaded",
+                                   targetUid));
+      if (auto* sl = fileSystem_.swapLog()) {
+        sl->warning("SWAP", static_cast<std::uint8_t>(ExecCommandResult::NOT_QUIESCENT),
+                    fmt::format("RELOAD_TPRM_FAIL: uid=0x{:06X} reason=not_quiescent", targetUid));
+      }
+      return static_cast<std::uint8_t>(ExecCommandResult::NOT_QUIESCENT);
+    }
+    if (ingest != system_core::system_component::TprmIngest::LOADED) {
       comp->unlock();
       sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
                        fmt::format("TPRM reload failed for component 0x{:06X}", targetUid));
@@ -298,7 +337,8 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     sysLog_->info(label(),
                   fmt::format("TPRM reloaded for component 0x{:06X} (bank swapped)", targetUid));
     if (auto* sl = fileSystem_.swapLog()) {
-      sl->info("SWAP", fmt::format("RELOAD_TPRM_OK: uid=0x{:06X} file={}", targetUid, TPRM_FN));
+      sl->info("SWAP", fmt::format("RELOAD_TPRM_OK: uid=0x{:06X} file={} wait_us={} load_us={}",
+                                   targetUid, TPRM_FN, waitNs / 1000U, loadNs / 1000U));
     }
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
@@ -309,6 +349,32 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     }
     std::uint32_t targetUid = 0;
     std::memcpy(&targetUid, payload.data(), 4);
+
+    // Loading a library and initializing a component are control-plane
+    // work. A reload that arrives on the task thread (an action's
+    // command) is handed to the external I/O thread, which runs it at the
+    // top of its loop; the outcome is in the system log and the swap log.
+    if (std::this_thread::get_id() == taskThreadId_.load(std::memory_order_acquire)) {
+      std::uint32_t none = NO_DEFERRED_RELOAD;
+      if (!deferredReloadUid_.compare_exchange_strong(none, targetUid, std::memory_order_acq_rel)) {
+        sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
+                         fmt::format("RELOAD_LIBRARY: 0x{:06X} refused, a reload is already "
+                                     "waiting for the control thread",
+                                     targetUid));
+        if (auto* sl = fileSystem_.swapLog()) {
+          sl->warning(
+              "SWAP", static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE),
+              fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=reload_pending", targetUid));
+        }
+        return static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE);
+      }
+      if (auto* sl = fileSystem_.swapLog()) {
+        sl->info("SWAP", fmt::format("RELOAD_LIBRARY_DEFERRED: uid=0x{:06X}", targetUid));
+      }
+      return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+    }
+
+    const std::uint64_t RELOAD_BEGIN_NS = apex::helpers::cpu::getMonotonicNs();
 
     // Component must exist and be locked.
     auto* oldComp = registry_.getComponent(targetUid);
@@ -323,6 +389,27 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
                     fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=not_locked", targetUid));
       }
       return static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE);
+    }
+
+    // A hardware model's transport link has its far end in a driver's
+    // hands. A swap would leave that driver on the link of an instance
+    // about to be destroyed and the new instance on a link no driver
+    // holds, so it is refused, before a library is looked for.
+    const auto refuseHardwareModel = [&]() noexcept {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
+                       fmt::format("RELOAD_LIBRARY: 0x{:06X} is a hardware model; its transport "
+                                   "link cannot be carried to a new instance, nothing swapped",
+                                   targetUid));
+      if (auto* sl = fileSystem_.swapLog()) {
+        sl->warning(
+            "SWAP", static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE),
+            fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=hw_model_transport", targetUid));
+      }
+      oldComp->unlock();
+      return static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE);
+    };
+    if (oldComp->asHwModel() != nullptr) {
+      return refuseHardwareModel();
     }
 
     // Build .so name and look in inactive bank.
@@ -386,8 +473,36 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
       return static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE);
     }
 
+    // A hardware model cannot take a software component's place either:
+    // nothing would provision its transport.
+    if (newComp->asHwModel() != nullptr) {
+      return refuseHardwareModel();
+    }
+
     // Transfer identity from old component.
     newComp->setInstanceIndex(oldComp->instanceIndex());
+
+    // The new instance gets its log before it loads parameters and
+    // initializes, as registration does. The file is the one its own name
+    // and type select: a replacement that keeps both appends to the file
+    // the old instance wrote, and any other replacement opens its own.
+    const std::string NEW_LOG_PATH = newComp->componentLogPath(fileSystem_.logDir()).string();
+    if (newComp->initComponentLog(fileSystem_.logDir())) {
+      if (auto* sl = fileSystem_.swapLog()) {
+        sl->info("SWAP", fmt::format("RELOAD_LIBRARY_LOG_ATTACHED: uid=0x{:06X} log={}", targetUid,
+                                     NEW_LOG_PATH));
+      }
+    } else {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_IO_ERROR),
+                       fmt::format("RELOAD_LIBRARY: new component runs without a log: could not "
+                                   "open {}",
+                                   NEW_LOG_PATH));
+      if (auto* sl = fileSystem_.swapLog()) {
+        sl->warning("SWAP", static_cast<std::uint8_t>(WARN_IO_ERROR),
+                    fmt::format("RELOAD_LIBRARY_WARN: uid=0x{:06X} log_open_failed log={}",
+                                targetUid, NEW_LOG_PATH));
+      }
+    }
 
     // Initialize new component: loadTprm from active bank (same config).
     if (newComp->loadTprm(fileSystem_.tprmDir()) ==
@@ -414,33 +529,25 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
       return static_cast<std::uint8_t>(ExecCommandResult::INIT_FAILED);
     }
 
+    // Attach the internal bus as registration does for a schedulable
+    // component. The instance is published locked, so none of its tasks
+    // runs before it has been told the bus is ready.
+    if (interface_ && system_core::system_component::isSchedulable(newComp->componentType())) {
+      newComp->setInternalBus(interface_.get());
+    }
+    newComp->lock();
+
     if (auto* sl = fileSystem_.swapLog()) {
       sl->info("SWAP", fmt::format("RELOAD_LIBRARY_INIT_OK: uid=0x{:06X}", targetUid));
     }
 
-    // Archive old component log before destroying old component.
-    // Construct log path from component identity (componentLog() is protected).
+    // Copy the old instance's log file as it stands on disk, before the
+    // tasks and the registry entry are replaced. Lines either log still
+    // holds in its queue are not in the copy.
     {
-      const std::string LOG_FN =
-          fmt::format("{}_{}.log", oldComp->componentName(), oldComp->instanceIndex());
-      std::filesystem::path logPath;
-      switch (oldComp->componentType()) {
-      case system_core::system_component::ComponentType::SW_MODEL:
-      case system_core::system_component::ComponentType::HW_MODEL:
-        logPath = fileSystem_.modelLogDir() / LOG_FN;
-        break;
-      case system_core::system_component::ComponentType::SUPPORT:
-        logPath = fileSystem_.supportLogDir() / LOG_FN;
-        break;
-      case system_core::system_component::ComponentType::DRIVER:
-        logPath = fileSystem_.driverLogDir() / LOG_FN;
-        break;
-      default:
-        logPath = fileSystem_.coreLogDir() / LOG_FN;
-        break;
-      }
-      const auto ARCHIVED = fileSystem_.archiveComponentLog(logPath, oldComp->componentName(),
-                                                            oldComp->instanceIndex());
+      const auto ARCHIVED =
+          fileSystem_.archiveComponentLog(oldComp->componentLogPath(fileSystem_.logDir()),
+                                          oldComp->componentName(), oldComp->instanceIndex());
       if (auto* sl = fileSystem_.swapLog()) {
         if (!ARCHIVED.empty()) {
           sl->info("SWAP", fmt::format("RELOAD_LIBRARY_LOG_ARCHIVED: uid=0x{:06X} dest={}",
@@ -449,62 +556,71 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
       }
     }
 
-    // Count how many scheduler entries reference this component.
-    std::uint8_t expectedTasks = 0;
-    for (const auto& entry : scheduler_.entries()) {
-      if (entry.fullUid == targetUid) {
-        ++expectedTasks;
-      }
-    }
+    // Publish: the scheduler's entries, the registry's entries and the
+    // component list are bound to the new instance on the task thread,
+    // with every dispatched task settled. This call waits for that.
+    const std::size_t HELD_AT_PUBLISH = actionPhaseHolds_.load(std::memory_order_relaxed);
+    const LibrarySwapOutcome SWAP = publishLibrarySwap(targetUid, *oldComp, *newComp);
 
-    // Re-wire scheduler task pointers.
-    const std::uint8_t TASKS_REPLACED = scheduler_.replaceComponentTasks(targetUid, *newComp);
-
-    // Validate: all tasks must be replaced. If any are missing, the scheduler
-    // would point to freed memory when the old .so is unloaded.
-    if (TASKS_REPLACED < expectedTasks) {
+    if (SWAP.status == static_cast<std::uint8_t>(ExecCommandResult::NOT_QUIESCENT)) {
       sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
-                       fmt::format("RELOAD_LIBRARY: task mismatch (expected={}, replaced={}), "
-                                   "aborting swap to prevent use-after-free",
-                                   expectedTasks, TASKS_REPLACED));
-      if (auto* sl = fileSystem_.swapLog()) {
-        sl->warning("SWAP", static_cast<std::uint8_t>(ExecCommandResult::TASK_MISMATCH),
-                    fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=task_mismatch "
-                                "expected={} replaced={}",
-                                targetUid, expectedTasks, TASKS_REPLACED));
-      }
-      // Restore old task pointers (new component had partial matches).
-      scheduler_.replaceComponentTasks(targetUid, *oldComp);
-      oldComp->unlock();
-      return static_cast<std::uint8_t>(ExecCommandResult::TASK_MISMATCH);
-    }
-
-    // Update registry entry to point to new component.
-    if (!registry_.updateComponent(targetUid, newComp)) {
-      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
-                       fmt::format("RELOAD_LIBRARY: registry update failed for 0x{:06X}, "
-                                   "restoring old task pointers",
+                       fmt::format("RELOAD_LIBRARY: tasks did not come to rest for 0x{:06X}, "
+                                   "nothing swapped",
                                    targetUid));
       if (auto* sl = fileSystem_.swapLog()) {
-        sl->warning("SWAP", static_cast<std::uint8_t>(ExecCommandResult::REGISTRY_FAILED),
-                    fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=registry_update_failed",
-                                targetUid));
+        sl->warning("SWAP", SWAP.status,
+                    fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=not_quiescent wait_us={}",
+                                targetUid, SWAP.waitNs / 1000U));
       }
-      scheduler_.replaceComponentTasks(targetUid, *oldComp);
       oldComp->unlock();
-      return static_cast<std::uint8_t>(ExecCommandResult::REGISTRY_FAILED);
+      return SWAP.status;
     }
 
-    // Update registeredComponents_ vector.
-    for (auto& regComp : registeredComponents_) {
-      if (regComp == oldComp) {
-        regComp = newComp;
-        break;
+    // Every scheduled task needs a counterpart, sequenced as before: an
+    // entry left on the old instance would run it after the swap.
+    if (SWAP.status == static_cast<std::uint8_t>(ExecCommandResult::TASK_MISMATCH)) {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
+                       fmt::format("RELOAD_LIBRARY: the new component lacks a scheduled task or "
+                                   "sequences one differently ({} entries), nothing swapped",
+                                   SWAP.tasksExpected));
+      if (auto* sl = fileSystem_.swapLog()) {
+        sl->warning("SWAP", SWAP.status,
+                    fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=task_mismatch "
+                                "expected={} replaced={}",
+                                targetUid, SWAP.tasksExpected, SWAP.tasksReplaced));
       }
+      oldComp->unlock();
+      return SWAP.status;
     }
 
-    // Store plugin loader (keeps .so loaded, destroys previous if any).
-    plugins_[targetUid] = std::move(loader);
+    if (SWAP.status == static_cast<std::uint8_t>(ExecCommandResult::REGISTRY_FAILED)) {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
+                       fmt::format("RELOAD_LIBRARY: the new component lacks a registered data "
+                                   "block or task of 0x{:06X}, nothing swapped",
+                                   targetUid));
+      if (auto* sl = fileSystem_.swapLog()) {
+        sl->warning(
+            "SWAP", SWAP.status,
+            fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=registry_mismatch", targetUid));
+      }
+      oldComp->unlock();
+      return SWAP.status;
+    }
+    const std::uint8_t TASKS_REPLACED = SWAP.tasksReplaced;
+    if (auto* sl = fileSystem_.swapLog()) {
+      sl->info("SWAP", fmt::format("RELOAD_LIBRARY_PUBLISHED: uid=0x{:06X} tasks={} wait_us={}",
+                                   targetUid, TASKS_REPLACED, SWAP.waitNs / 1000U));
+    }
+
+    // Keep the new library loaded. A plugin this swap replaced is
+    // destroyed at the top of this thread's next loop, once this handler
+    // and its uses of the old instance are behind it.
+    if (auto it = plugins_.find(targetUid); it != plugins_.end()) {
+      retiredPlugins_.push_back(std::move(it->second));
+      it->second = std::move(loader);
+    } else {
+      plugins_.emplace(targetUid, std::move(loader));
+    }
 
     // Swap the .so file between banks (inactive -> active, active -> inactive).
     // This keeps the active bank in sync with what's running, and the inactive
@@ -529,12 +645,30 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
                               targetUid, TASKS_REPLACED, SO_NAME));
 
     if (auto* sl = fileSystem_.swapLog()) {
-      sl->info("SWAP", fmt::format("RELOAD_LIBRARY_OK: uid=0x{:06X} tasks={} so={}", targetUid,
-                                   TASKS_REPLACED, SO_NAME));
+      sl->info("SWAP",
+               fmt::format("RELOAD_LIBRARY_OK: uid=0x{:06X} tasks={} so={} total_us={}", targetUid,
+                           TASKS_REPLACED, SO_NAME,
+                           (apex::helpers::cpu::getMonotonicNs() - RELOAD_BEGIN_NS) / 1000U));
     }
 
-    // Unlock the new component so it resumes execution.
+    // The new instance was published locked. It is told the bus is ready
+    // on this thread, as at start-up, and unlocked: its tasks are
+    // dispatched from the next cycle. The instance it replaced stays
+    // locked. Since the publication the task thread has run no action
+    // phase and delivered no queued command, and it resumes both once
+    // the flag is cleared, so nothing reads or commands the instance
+    // beside its hook.
+    const std::uint64_t HOOK_BEGIN_NS = apex::helpers::cpu::getMonotonicNs();
+    newComp->onBusReady();
+    replacementPreparing_.store(false, std::memory_order_release);
     newComp->unlock();
+    if (auto* sl = fileSystem_.swapLog()) {
+      sl->info("SWAP",
+               fmt::format("RELOAD_LIBRARY_READY: uid=0x{:06X} hook_us={} cycles_held={}",
+                           targetUid,
+                           (apex::helpers::cpu::getMonotonicNs() - HOOK_BEGIN_NS) / 1000U,
+                           actionPhaseHolds_.load(std::memory_order_relaxed) - HELD_AT_PUBLISH));
+    }
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
 

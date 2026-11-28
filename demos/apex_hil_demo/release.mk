@@ -13,6 +13,8 @@ APP_ApexHilDemo_rpi_TYPE           := posix
 APP_ApexHilDemo_rpi_BINARY         := ApexHilDemo
 APP_ApexHilDemo_stm32_TYPE         := firmware
 APP_ApexHilDemo_stm32_BINARY       := apex_hil_demo_firmware
+# The flight controller firmware exists for this board alone.
+APP_ApexHilDemo_stm32_BOARD        := nucleo_l476rg
 
 # Supervised bundle (CMake apex_add_bundle: executive + watchdog + operating
 # doc as one artifact). A bundle releases through the same manifest surface as

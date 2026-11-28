@@ -6,6 +6,7 @@
  */
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 
 #include <atomic>
@@ -33,6 +34,13 @@ struct TaskCtx {
   SchedulableTask* task{nullptr};
   TaskEntry* entry{nullptr}; ///< TaskEntry for sequencing info.
   TaskCtx* next{nullptr};
+  /// For a sequenced task, the counter value this dispatch waits for and
+  /// the value its group's counter wraps after, both counted over the
+  /// group's tasks handed to their pools on the same tick. The tick thread
+  /// writes them once it knows which those are, the wrap first and then
+  /// the wait; the wait reads 0 until then, and its store publishes both.
+  std::atomic<int> seqPhase{0};
+  int seqMaxPhase{0};
   std::uint16_t tick{0};
   std::uint8_t poolId{0}; ///< Pool ID for multi-pool context release.
 };
@@ -91,8 +99,23 @@ public:
       freeCount_.fetch_add(1, std::memory_order_relaxed);
       allocatedCount_.fetch_add(1, std::memory_order_relaxed);
 #endif
+      ++reserved_;
     }
   }
+
+  /**
+   * @brief Bring the preallocated contexts up to N; a pool already there is left alone.
+   *
+   * Like preallocate(), for the thread that configures the pool.
+   */
+  void reserve(std::size_t n) noexcept {
+    if (n > reserved_) {
+      preallocate(n - reserved_);
+    }
+  }
+
+  /** @brief Contexts preallocate() has added. */
+  [[nodiscard]] std::size_t reserved() const noexcept { return reserved_; }
 
   void setFallbackAlloc(bool enable) noexcept { allowFallbackAlloc_ = enable; }
 
@@ -170,6 +193,7 @@ private:
   std::atomic<TaskCtx*> head_;
   std::atomic<std::size_t> freeCount_;
   std::atomic<std::size_t> allocatedCount_;
+  std::size_t reserved_{0}; ///< Contexts added by preallocate(); configuring thread only.
   bool allowFallbackAlloc_;
 };
 

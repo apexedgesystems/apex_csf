@@ -113,6 +113,11 @@ void ApexExecutive::externalIO(std::promise<std::uint8_t>&& p) noexcept {
   while (!externalIOShouldStop_.load(std::memory_order_relaxed) &&
          !controlState_.shutdownRequested.load(std::memory_order_relaxed)) {
 
+    // Library control work belongs to this thread: plugins a swap
+    // replaced are destroyed here, and a reload an action asked for runs
+    // here.
+    serviceLibraryControl();
+
     // Poll stdin
     const int POLL_RESULT = ::poll(&pfd, 1, STDIN_TIMEOUT_MS);
 

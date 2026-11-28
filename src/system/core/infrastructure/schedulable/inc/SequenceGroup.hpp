@@ -9,6 +9,15 @@
  *   - Tasks at higher phases wait for lower phases to complete
  *   - Counter-based coordination with hybrid spin/park wait
  *
+ * Under the multi-threaded scheduler the phases are an order. The tasks
+ * of a group need not share a rate: on each tick the scheduler orders
+ * the group's tasks it dispatches on that tick, and a task waits for
+ * exactly the lower phases that run with it. A task alone in its group
+ * on a tick waits for nothing, and a task the scheduler could not hand
+ * to its pool takes no part in that tick's order. Any integers that sort the tasks will do;
+ * numbering them 1, 2, 3 or counting tasks as the example below does
+ * comes to the same order.
+ *
  * Design:
  *   SequenceGroup maintains an internal registry mapping tasks to their
  *   sequencing info. When tasks are added to the scheduler, the scheduler
@@ -24,12 +33,13 @@
  * pointer to it, so the group must outlive every task registered with
  * the scheduler against it.
  *
- * Frame contract: a sequenced chain must complete within its period.
- * The counter wraps on the final advance of a cycle; if the next
- * period's phase-1 task can start while this period's tail phase still
- * waits (an overrun), the early advance can wrap the counter beneath
- * the tail waiter, which then completes in the following cycle --
- * delayed, never corrupt.
+ * Frame contract: the tasks of a group dispatched on one tick are meant
+ * to complete before the group is next due. The counter rests at 1
+ * between ticks and wraps there on the last completion of a tick's
+ * tasks. The multi-threaded scheduler holds a group to that: while any
+ * of its tasks is still running from an earlier tick, none of its tasks
+ * is dispatched, and those due are skipped and counted. A group that
+ * overruns its frame loses runs; it is not left mid-count.
  *
  * Example:
  * @code

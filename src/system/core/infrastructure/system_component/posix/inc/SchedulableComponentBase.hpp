@@ -82,6 +82,30 @@ protected:
   [[nodiscard]] std::uint8_t doInit() noexcept override = 0;
 
 public:
+  /**
+   * @brief Reset for re-initialization: the component's doReset(), then
+   *        the task and group tables are emptied, so the next init()
+   *        registers every task and group once.
+   * @note Pointers from taskByUid() and sequenceGroup() are invalid from
+   *       here until init() has registered the tasks again.
+   * @note NOT RT-safe: boot-time re-initialization only. No reader of the
+   *       task or group tables and no dispatched task may remain.
+   */
+  void reset() noexcept override {
+    SystemComponentBase::reset();
+    for (std::size_t i = 0; i < taskCount_; ++i) {
+      tasks_[i].task.reset();
+      tasks_[i].uid = 0;
+      tasks_[i].groupIdx = NO_GROUP;
+      tasks_[i].phase = 0;
+    }
+    taskCount_ = 0;
+    for (std::size_t i = 0; i < groupCount_; ++i) {
+      groups_[i].reset();
+    }
+    groupCount_ = 0;
+  }
+
   /** @brief Get number of registered tasks. */
   [[nodiscard]] std::size_t taskCount() const noexcept { return taskCount_; }
 

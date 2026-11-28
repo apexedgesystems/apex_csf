@@ -14,6 +14,7 @@
 #include "src/system/core/infrastructure/schedulable/inc/SchedulableTask.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/TaskBuilder.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/IComponentResolver.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
 
 #include <cstdint>
 
@@ -953,4 +954,107 @@ TEST(ApexRegistryExportTest, ComponentEntryRanges) {
   EXPECT_EQ(compB.taskCount, 1u);
   EXPECT_EQ(compB.dataStart, 1u);
   EXPECT_EQ(compB.dataCount, 2u);
+}
+
+/* ----------------------------- Rebind (hot-swap) ----------------------------- */
+
+namespace {
+
+/// A component with one output block and one task, as a hot-swap offers it.
+class RebindModel final : public system_core::system_component::SwModelBase {
+public:
+  /// What an instance registers.
+  enum class Shape : std::uint8_t { STANDARD, OTHER_SIZE, OTHER_NAME, NO_TASK };
+
+  explicit RebindModel(const char* name, Shape shape = Shape::STANDARD) noexcept
+      : name_(name), shape_(shape) {}
+
+  [[nodiscard]] std::uint16_t componentId() const noexcept override { return 0x66; }
+  [[nodiscard]] const char* componentName() const noexcept override { return name_; }
+  [[nodiscard]] const char* label() const noexcept override { return "REBIND"; }
+  [[nodiscard]] std::uint8_t step() noexcept { return 0; }
+
+  TestData output{};
+
+protected:
+  [[nodiscard]] std::uint8_t doInit() noexcept override {
+    const std::size_t BYTES =
+        (shape_ == Shape::OTHER_SIZE) ? sizeof(output.field1) : sizeof(output);
+    bool ok = registerData(DataCategory::OUTPUT, (shape_ == Shape::OTHER_NAME) ? "other" : "output",
+                           &output, BYTES);
+    if (shape_ != Shape::NO_TASK) {
+      ok = ok && registerTask<RebindModel, &RebindModel::step>(1, this, "step");
+    }
+    return ok ? 0 : 1;
+  }
+
+private:
+  const char* name_;
+  Shape shape_;
+};
+
+/// Register MODEL's component, output block and task, then freeze.
+void registerAllOf(ApexRegistry& registry, RebindModel& model) {
+  ASSERT_EQ(registry.registerComponent(0x6600, model.componentName(), &model), Status::SUCCESS);
+  const auto* desc = model.dataDescriptor(0);
+  ASSERT_EQ(registry.registerData(0x6600, desc->category, desc->name, desc->ptr, desc->size),
+            Status::SUCCESS);
+  auto* task = model.taskByUid(1);
+  ASSERT_EQ(registry.registerTask(0x6600, 1, task->getLabel().data(), task), Status::SUCCESS);
+  ASSERT_EQ(registry.freeze(), Status::SUCCESS);
+}
+
+} // namespace
+
+/** @test After a rebind every lookup of the component returns the replacement's. */
+TEST(ApexRegistryRebindTest, EveryEntryFollowsTheReplacement) {
+  RebindModel original("Original");
+  ASSERT_EQ(original.init(), 0u);
+  ApexRegistry registry;
+  ASSERT_NO_FATAL_FAILURE(registerAllOf(registry, original));
+
+  RebindModel replacement("Replacement");
+  ASSERT_EQ(replacement.init(), 0u);
+  replacement.output.field1 = 0x1234;
+  ASSERT_EQ(registry.canRebindComponent(0x6600, replacement), Status::SUCCESS);
+  ASSERT_EQ(registry.rebindComponent(0x6600, replacement), Status::SUCCESS);
+
+  EXPECT_EQ(registry.getComponent(0x6600), &replacement);
+  EXPECT_STREQ(registry.getComponentEntry(0x6600)->name, "Replacement");
+
+  const DataEntry* data = registry.getData(0x6600, DataCategory::OUTPUT);
+  ASSERT_NE(data, nullptr);
+  EXPECT_EQ(data->dataPtr, &replacement.output);
+  EXPECT_EQ(data->name, replacement.dataDescriptor(0)->name);
+  EXPECT_EQ(data->size, sizeof(TestData));
+
+  const TaskEntry* task = registry.getTask(0x6600, 1);
+  ASSERT_NE(task, nullptr);
+  EXPECT_EQ(task->task, replacement.taskByUid(1));
+  EXPECT_EQ(task->name, replacement.taskByUid(1)->getLabel().data());
+}
+
+/** @test A replacement without a counterpart for a registered entry changes nothing. */
+TEST(ApexRegistryRebindTest, AReplacementWithoutACounterpartChangesNothing) {
+  RebindModel original("Original");
+  ASSERT_EQ(original.init(), 0u);
+  ApexRegistry registry;
+  ASSERT_NO_FATAL_FAILURE(registerAllOf(registry, original));
+
+  for (const auto SHAPE : {RebindModel::Shape::OTHER_SIZE, RebindModel::Shape::OTHER_NAME,
+                           RebindModel::Shape::NO_TASK}) {
+    RebindModel refused("Refused", SHAPE);
+    ASSERT_EQ(refused.init(), 0u);
+    EXPECT_EQ(registry.canRebindComponent(0x6600, refused), Status::ERROR_NOT_FOUND) << int(SHAPE);
+    EXPECT_EQ(registry.rebindComponent(0x6600, refused), Status::ERROR_NOT_FOUND) << int(SHAPE);
+
+    EXPECT_EQ(registry.getComponent(0x6600), &original);
+    EXPECT_STREQ(registry.getComponentEntry(0x6600)->name, "Original");
+    EXPECT_EQ(registry.getData(0x6600, DataCategory::OUTPUT)->dataPtr, &original.output);
+    EXPECT_EQ(registry.getTask(0x6600, 1)->task, original.taskByUid(1));
+  }
+
+  RebindModel stranger("Stranger");
+  ASSERT_EQ(stranger.init(), 0u);
+  EXPECT_EQ(registry.rebindComponent(0x7700, stranger), Status::ERROR_COMPONENT_NOT_FOUND);
 }

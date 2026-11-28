@@ -77,11 +77,12 @@ enum class Status : std::uint8_t {
 enum class ExecCommandResult : std::uint8_t {
   DLOPEN_FAILED = ///< Dynamic library open failed.
   static_cast<std::uint8_t>(system_core::system_component::CommandResult::EOE_COMMAND_RESULT),
-  NOT_SWAPPABLE,   ///< Component not locked or identity mismatch.
+  NOT_SWAPPABLE,   ///< Component not locked, identity mismatch, or a hardware model.
   INIT_FAILED,     ///< Component initialization failed after swap.
   TASK_MISMATCH,   ///< New component task count differs from old.
   REGISTRY_FAILED, ///< Registry re-population failed after swap.
   INGEST_HELD,     ///< Refused: SAFE ingest hold (repair TPRMs, then RELOAD_EXECUTIVE).
+  NOT_QUIESCENT, ///< Refused: tasks did not come to rest within the reload's wait; nothing changed.
 };
 
 /* ----------------------------- API ----------------------------- */

@@ -416,17 +416,17 @@ iface.freezeQueues();
 
 | Directory    | Type                   | Tests | Runs with `make test` |
 | ------------ | ---------------------- | ----- | --------------------- |
-| `apex/utst/` | Unit tests             | 72    | Yes (one disabled)    |
+| `apex/utst/` | Unit tests             | 74    | Yes (one disabled)    |
 | `apex/ptst/` | Performance benchmarks | 25    | No (manual)           |
 
 ### Test Organization
 
 | Component           | Test File                       | Tests  |
 | ------------------- | ------------------------------- | ------ |
-| ApexInterface       | `ApexInterface_uTest.cpp`       | 8      |
-| BufferPool          | `BufferPool_uTest.cpp`          | 31     |
+| ApexInterface       | `ApexInterface_uTest.cpp`       | 9      |
+| BufferPool          | `BufferPool_uTest.cpp`          | 32     |
 | FileTransferHandler | `FileTransferHandler_uTest.cpp` | 33     |
-| **Total**           |                                 | **72** |
+| **Total**           |                                 | **74** |
 
 ---
 

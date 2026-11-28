@@ -80,7 +80,9 @@ for fault injection): tunables specify a `source_uid`, `source_category`,
 `source_byte_offset`, and `source_byte_len`, and a registry-lookup
 delegate (`BridgeResolveDelegate`) resolves them to a live byte pointer.
 The bridge memcpys those bytes; it is intentionally agnostic to the
-source struct.
+source struct. It asks the delegate on every step and keeps no pointer
+between steps, so it follows a source whose block moves (a library swap
+of the source component) and idles while the source does not resolve.
 
 This means **any** registered OUTPUT (or any `DataCategory`) can be
 published. The producer model doesn't have to know the bridge exists,
@@ -236,7 +238,7 @@ assigns instance indices).
 | `pushes_failed_full` | `uint64_t` | Pushes refused because consumer fell behind |
 | `signals_failed`     | `uint64_t` | sem_post failures (should stay 0)           |
 | `channel_open`       | `uint8_t`  | 1 once shm + sem are open                   |
-| `source_resolved`    | `uint8_t`  | 1 once the source DataTarget resolves       |
+| `source_resolved`    | `uint8_t`  | 1 while the source DataTarget resolves      |
 | `region_orphaned`    | `uint8_t`  | 1 = shm path unlinked/replaced externally   |
 
 ### ShmRingBridgeTlm (32 bytes, packed)
@@ -356,7 +358,7 @@ docker compose run --rm -T dev-cuda \
 
 | Test File               | Tests | Coverage                                                        |
 | ----------------------- | ----- | --------------------------------------------------------------- |
-| ShmRingBridge_uTest.cpp | 8     | Identity, default-idle, validation, full E2E publish, FULL ring |
+| ShmRingBridge_uTest.cpp | 24    | Identity, default-idle, validation, full E2E publish, FULL ring |
 
 `fullEndToEndPublish` is the headline test: configures real shm + sem,
 writes 5 frames, hand-rolled Side B reader (spec-only, no horizon

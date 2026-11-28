@@ -1,7 +1,10 @@
 # ==============================================================================
 # Unit Tests: system_core_system_component
 #
-# Tests Status enum, SystemComponentBase lifecycle (init/reset/idempotent),
+# Tests Status enum, SystemComponentBase lifecycle (init/reset/idempotent)
+# and component log, the schedulable base's task tables across reset, the
+# hardware model's transport link, the registry's instance limit,
+# PluginLoader's refusals and error text,
 # ParamBank<T> A/B parameter staging (load/apply/rollback),
 # PackedTprm archive extraction and entry lookup, data primitives
 # (DataCategory, ModelData, DataTarget), and byte-level conformance against
@@ -15,20 +18,38 @@
 set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/SystemComponentStatus_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SystemComponentBase_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/SchedulableComponentBase_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ParamBank_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ComponentRegistry_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/PluginLoader_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/PackedTprm_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/GoldenVectors_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/TprmReadback_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/TprmPayload_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/DataCategory_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/DataTarget_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ModelData_uTest.cpp"
 )
 
 # ------------------------------------------------------------------------------
+# Test Plugins
+# ------------------------------------------------------------------------------
+
+# Plugin libraries the loader tests open. Two pass the ABI gate and lack one
+# factory symbol; one has both factories and reports another ABI version.
+foreach (_plugin NoCreate NoDestroy OtherAbi)
+  apex_add_test_plugin(
+    TARGET SystemComponentTestPlugin_${_plugin} SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/Plugin${_plugin}.cpp"
+  )
+endforeach ()
+
+# ------------------------------------------------------------------------------
 # Test Target
 # ------------------------------------------------------------------------------
 
+# The golden vectors are the cross-language contract (rust generates them,
+# this suite consumes them); the path is baked so ctest runs from any cwd.
 apex_add_gtest(
   TARGET
   TestSystemCoreSystemComponent
@@ -40,13 +61,13 @@ apex_add_gtest(
   system_core_logs
   utilities_helpers
   fmt::fmt
+  DEFS
+  APEX_TPRM_VECTORS_DIR="${CMAKE_SOURCE_DIR}/compat/tprm"
+  PLUGINS
+  SystemComponentTestPlugin_NoCreate
+  SystemComponentTestPlugin_NoDestroy
+  SystemComponentTestPlugin_OtherAbi
   LABELS
   system
   system_component
-)
-
-# The golden vectors are the cross-language contract (rust generates them,
-# this suite consumes them); the path is baked so ctest runs from any cwd.
-target_compile_definitions(
-  TestSystemCoreSystemComponent PRIVATE APEX_TPRM_VECTORS_DIR="${CMAKE_SOURCE_DIR}/compat/tprm"
 )

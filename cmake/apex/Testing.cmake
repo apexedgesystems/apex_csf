@@ -20,6 +20,9 @@
 # - dtst: component-level tests -- exercise a whole component or its
 #         integration with others, too coarse/slow for the unit gate. Run
 #         manually (bin/dtests/<name>).
+#
+# A unit test that loads a library at run time declares it with
+# apex_add_test_plugin and names it in its apex_add_gtest PLUGINS list.
 # ==============================================================================
 
 include_guard(GLOBAL)
@@ -77,6 +80,52 @@ function (_apex_test_executable)
 endfunction ()
 
 # ------------------------------------------------------------------------------
+# apex_add_test_plugin(TARGET <t> SOURCES <src...> [LINK <libs...>])
+#
+# A library a unit test loads at run time (dlopen): built as a MODULE named
+# <t>.so into test_plugins/ under the build directory. It is private to the
+# build tree: no alias, no install or export rule, no manifest, no
+# precompiled header. Nothing links it; the test that loads it lists it
+# under PLUGINS in its apex_add_gtest call, declared after this one.
+#
+# Arguments:
+#   TARGET   <n>         required
+#   SOURCES  <src...>    required
+#   LINK     <libs...>   optional (linked PRIVATE)
+# ------------------------------------------------------------------------------
+function (_apex_test_plugin_dir _out)
+  set(${_out}
+      "${CMAKE_BINARY_DIR}/test_plugins"
+      PARENT_SCOPE
+  )
+endfunction ()
+
+function (apex_add_test_plugin)
+  # Skip on bare-metal
+  if (APEX_PLATFORM_BAREMETAL)
+    return()
+  endif ()
+
+  cmake_parse_arguments(TP "" "TARGET" "SOURCES;LINK" ${ARGN})
+  apex_require(TP_TARGET TP_SOURCES)
+
+  _apex_test_plugin_dir(_plugin_dir)
+  add_library(${TP_TARGET} MODULE ${TP_SOURCES})
+  target_include_directories(${TP_TARGET} PRIVATE "${CMAKE_SOURCE_DIR}")
+  if (TP_LINK)
+    target_link_libraries(${TP_TARGET} PRIVATE ${TP_LINK})
+  endif ()
+  set_target_properties(
+    ${TP_TARGET}
+    PROPERTIES PREFIX ""
+               SUFFIX ".so"
+               LIBRARY_OUTPUT_DIRECTORY "${_plugin_dir}"
+  )
+
+  message(STATUS "[TestPlugin] target=${TP_TARGET} out=test_plugins/")
+endfunction ()
+
+# ------------------------------------------------------------------------------
 # apex_add_gtest(...)  -- UNIT test (utst/), registered with CTest
 #
 # Add a GoogleTest-based test target with coverage and timing controls.
@@ -89,6 +138,11 @@ endfunction ()
 #   SOURCES         <src...>         required
 #   CUDA            <cu...>          optional
 #   LINK            <libs...>        optional
+#   DEFS            <defs...>        optional (compile definitions, PRIVATE)
+#   PLUGINS         <targets...>     optional (apex_add_test_plugin targets the
+#                                    test loads; built before it, and found
+#                                    in the directory APEX_TEST_PLUGIN_DIR
+#                                    names in the test's sources)
 #   COVERAGE_FOR    <lib_target>     optional (overrides auto-detection)
 #   INC             <dir>            optional
 #   LABELS          <labels...>      optional
@@ -110,7 +164,7 @@ function (apex_add_gtest)
   cmake_parse_arguments(
     GT "TIMING_ALL;NO_COVERAGE;NO_PCH"
     "TARGET;INC;WORKING_DIR;RESOURCE_LOCK;COVERAGE_FOR;REQUIRES_THREADS"
-    "SOURCES;CUDA;LINK;LABELS;TIMING_TESTS;TIMING_PATTERNS" ${ARGN}
+    "SOURCES;CUDA;LINK;DEFS;PLUGINS;LABELS;TIMING_TESTS;TIMING_PATTERNS" ${ARGN}
   )
   apex_require(GT_TARGET GT_SOURCES)
 
@@ -134,6 +188,26 @@ function (apex_add_gtest)
     "${GT_INC}"
     ${_pch}
   )
+
+  if (GT_DEFS)
+    target_compile_definitions(${GT_TARGET} PRIVATE ${GT_DEFS})
+  endif ()
+
+  # Plugin libraries the test loads at run time: built with the test, found
+  # by the directory baked into it.
+  if (GT_PLUGINS)
+    foreach (_plugin IN LISTS GT_PLUGINS)
+      if (NOT TARGET ${_plugin})
+        message(
+          FATAL_ERROR "apex_add_gtest(${GT_TARGET}): PLUGINS names '${_plugin}', which no earlier "
+                      "apex_add_test_plugin call declares"
+        )
+      endif ()
+    endforeach ()
+    add_dependencies(${GT_TARGET} ${GT_PLUGINS})
+    _apex_test_plugin_dir(_plugin_dir)
+    target_compile_definitions(${GT_TARGET} PRIVATE APEX_TEST_PLUGIN_DIR="${_plugin_dir}")
+  endif ()
 
   # Coverage instrumentation (auto-detect from LINK or use COVERAGE_FOR override)
   set(_coverage_libs "")

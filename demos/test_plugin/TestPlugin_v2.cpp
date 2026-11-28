@@ -5,6 +5,6 @@
 
 #define APEX_TEST_PLUGIN_VERSION 2
 
-#include "demos/apex_ops_demo/test/plugin/TestPlugin.hpp"
+#include "demos/test_plugin/TestPlugin.hpp"
 
 APEX_PLUGIN_FACTORY(test::TestPlugin)

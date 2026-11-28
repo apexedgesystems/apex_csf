@@ -348,6 +348,65 @@ TEST(ShmRingBridge, fullEndToEndPublish) {
   // Bridge dtor cleans up shm + sem.
 }
 
+/** @test The bridge follows its source when the resolver gives another block, and idles while there
+ * is none. */
+TEST(ShmRingBridgeTest, SourceBlockIsLookedUpOnEveryStep) {
+  // Two blocks stand for the data of a component before and after a
+  // library swap; the resolver hands out whichever is current.
+  struct MovingSource {
+    std::array<std::uint8_t, 64> first{};
+    std::array<std::uint8_t, 64> second{};
+    const std::array<std::uint8_t, 64>* current = nullptr;
+  } source;
+  source.first.fill(0x11);
+  source.second.fill(0x22);
+  source.current = &source.first;
+
+  ShmRingBridge b;
+  b.setResolver(
+      [](void* ctx, std::uint32_t, DataCategory) noexcept -> ResolvedSource {
+        const auto* s = static_cast<MovingSource*>(ctx);
+        return (s->current != nullptr) ? ResolvedSource{s->current->data(), s->current->size()}
+                                       : ResolvedSource{};
+      },
+      &source);
+
+  const std::string SHM = uniqueShmPath("moving");
+  ShmRingBridgeTunables& t = b.tunables().get();
+  fillTunables(t, SHM, /*cap=*/16, /*payload_size=*/64, 0xDE00);
+  b.setInstanceIndex(0);
+  ASSERT_EQ(b.init(), 0u);
+  b.onBusReady();
+  ASSERT_EQ(b.bridgeState().source_resolved, 1u);
+
+  SideBReader reader;
+  ASSERT_TRUE(reader.open(SHM, SHM + "_wake", t.capacity, t.payload_size));
+  std::array<std::uint8_t, 64> rx{};
+
+  EXPECT_EQ(b.bridgeStep(), 0u);
+  ASSERT_TRUE(reader.pop(rx.data()));
+  EXPECT_EQ(rx[0], 0x11);
+
+  // The source moved: the next frame carries the new block's bytes.
+  source.current = &source.second;
+  EXPECT_EQ(b.bridgeStep(), 0u);
+  ASSERT_TRUE(reader.pop(rx.data()));
+  EXPECT_EQ(rx[0], 0x22) << "the bridge published from the block it resolved earlier";
+
+  // No source: the bridge idles and says so, then picks it up again.
+  source.current = nullptr;
+  EXPECT_EQ(b.bridgeStep(), 0u);
+  EXPECT_EQ(b.bridgeState().source_resolved, 0u);
+  EXPECT_FALSE(reader.pop(rx.data()));
+  source.current = &source.first;
+  EXPECT_EQ(b.bridgeStep(), 0u);
+  EXPECT_EQ(b.bridgeState().source_resolved, 1u);
+  ASSERT_TRUE(reader.pop(rx.data()));
+  EXPECT_EQ(rx[0], 0x11);
+
+  reader.close();
+}
+
 /* ================================================================== */
 /* Ring B command-sink (the visualization consumer -> apex via APROTO over SHM) tests         */
 /* ================================================================== */

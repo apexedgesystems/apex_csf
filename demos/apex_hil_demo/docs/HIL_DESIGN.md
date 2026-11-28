@@ -126,7 +126,6 @@ demos/apex_hil_demo/
 +-- watchdog/                     Standalone supervisor (ApexWatchdog)
 +-- scripts/                      C2 demo and checkout scripts (Python)
 +-- c2_data/                      Generated JSON struct dictionaries for C2
-+-- test/plugin/                  TestPlugin_v1/v2 for hot-swap verification
 +-- tprm/                         TPRM packing recipe + source TOMLs
 |   +-- tprm.manifest             Packing recipe: master.tprm (100 Hz),
 |   |                             master_1khz.tprm (1 kHz), safe_master.tprm (fallback)

@@ -4,10 +4,10 @@
  * @file TprmPayload.hpp
  * @brief Format A v4 payload prelude: verified ingest for component payloads.
  *
- * Every component payload carries a 20-byte little-endian prelude:
+ * Every component payload carries a 28-byte little-endian prelude:
  * ```
  *   magic[4]       = "APV4"
- *   version[2]     = 3
+ *   version[2]     = 4
  *   reserved[2]    = 0
  *   payloadSize[8] = byte length of the payload that follows -- 64-bit
  *                    so bundle entries (world content) ride the same
@@ -110,7 +110,8 @@ enum class TprmPayloadCheck : std::uint8_t {
   case TprmPayloadCheck::BAD_MAGIC:
     return "bad payload magic (want APV4)";
   case TprmPayloadCheck::BAD_VERSION:
-    return "payload version not 3";
+    static_assert(TPRM_PAYLOAD_VERSION == 4, "the text below names the version the reader takes");
+    return "payload version not 4";
   case TprmPayloadCheck::SIZE_MISMATCH:
     return "body length differs from header";
   case TprmPayloadCheck::UID_MISMATCH:

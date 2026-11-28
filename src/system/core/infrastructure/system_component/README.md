@@ -35,7 +35,7 @@ Component base classes and lifecycle management for the Apex executive framework
 | `DriverBase`               | Abstract class     | Base for real hardware interfaces (DRIVER)                                                                                                                             | Runtime: Yes                            |
 | `McuComponentBase`         | Abstract class     | Minimal implementation for bare-metal MCUs                                                                                                                             | Queries: Yes, Lifecycle: No             |
 | `PackedTprm`               | Struct             | TPRM file reader (archive extraction, entry lookup)                                                                                                                    | No (file I/O)                           |
-| `TprmPayload`              | Functions          | v3 payload prelude verification (magic/version/size/fullUid/CRC, distinct rejects)                                                                                     | No (file I/O)                           |
+| `TprmPayload`              | Functions          | v4 payload prelude verification (magic/version/size/fullUid/CRC, distinct rejects)                                                                                     | No (file I/O)                           |
 | `ComponentRegistry`        | Class              | Component lookup by fullUid, componentId, or name                                                                                                                      | Yes (read-only queries)                 |
 | `SystemComponentTlm`       | Struct             | Telemetry snapshot for component state export                                                                                                                          | Yes                                     |
 | `DataCategory`             | Enum               | Semantic categories for data blocks (STATIC_PARAM, TUNABLE_PARAM, STATE, INPUT, OUTPUT)                                                                                | Yes                                     |
@@ -212,7 +212,7 @@ public:
   [[nodiscard]] TParams active() const noexcept;
 
   /// @note RT-safe: Simple reads.
-  [[nodiscard]] const TParams& staged() const noexcept;
+  [[nodiscard]] TParams staged() const noexcept;
   [[nodiscard]] bool canRollback() const noexcept;
   [[nodiscard]] bool isLoaded() const noexcept;
   [[nodiscard]] uint64_t activeGeneration() const noexcept;
@@ -224,6 +224,12 @@ included -- owns one per parameter set and passes its own validator to
 load(). A rejected load() cannot be published (apply() refuses), and
 staging over the rollback source forfeits the rollback history (two banks
 cannot hold three states).
+
+A publish uses up the staged set. `publishInitial()` and `apply()` each
+need an accepted `load()` of their own, and `rollback()` stages nothing:
+an `apply()` with nothing newly staged returns `ERROR_NOT_CONFIGURED` and
+changes nothing. `isLoaded()` is true from an accepted `load()` until a
+`load()` is rejected, or a publish or rollback succeeds.
 
 ### McuComponentBase (mcu/)
 
@@ -347,6 +353,7 @@ comp.init();
 //    when; a rejected load can never be published)
 comp.loadParams(MyParams{200, 1});
 comp.applyParams();  // bank_.apply(): atomic swap, no re-init
+comp.applyParams();  // nothing staged since: ERROR_NOT_CONFIGURED, no change
 
 // 4. Rollback if needed (one level; staging again forfeits it)
 if (comp.canRollbackParams()) {
@@ -384,7 +391,7 @@ protected:
 | ------------- | ----------------- | ----- | --------------------- |
 | `base/utst/`  | Unit tests        | 15    | Yes                   |
 | `core/utst/`  | Unit tests        | 17    | Yes                   |
-| `posix/utst/` | Unit tests        | 114   | Yes                   |
+| `posix/utst/` | Unit tests        | 150   | Yes                   |
 | `mcu/utst/`   | Unit tests        | 10    | Yes                   |
 | `posix/ptst/` | Performance tests | 11    | No (manual)           |
 
@@ -392,6 +399,9 @@ protected:
 
 - All tests are platform-agnostic (no hardware dependencies)
 - Tests verify lifecycle transitions, status codes, A/B staging, rollback
+- Tests verify the component log, the registry's instance limit, the task
+  tables across reset, the transport link and the plugin loader's refusals;
+  the loader tests open two small libraries built beside them
 - Tests verify IComponent interface contract across implementations
 - Tests verify PackedTprm archive extraction and entry lookup
 - Tests verify McuComponentBase lifecycle and registration
@@ -404,4 +414,4 @@ protected:
 - `src/system/core/infrastructure/logs/` -- SystemLog used by components for diagnostics
 - `src/utilities/data_proxy/` -- ByteMaskProxy, EndiannessProxy for data transformation
 - `src/utilities/helpers/` -- Files utility for TPRM binary loading
-- `src/utilities/checksums/crc/` -- CRC-32/ISO-HDLC for v3 payload verification
+- `src/utilities/checksums/crc/` -- CRC-32/ISO-HDLC for v4 payload verification

@@ -11,7 +11,7 @@ include(apex/All)
 apex_module(system_core_executive)
 
 # ------------------------------------------------------------------------------
-# Sources (10 files)
+# Sources (11 files)
 # ------------------------------------------------------------------------------
 
 set(CPP_SOURCES
@@ -21,6 +21,7 @@ set(CPP_SOURCES
     "${SRC_DIR}/ApexExecutive_Clock.cpp"
     "${SRC_DIR}/ApexExecutive_Commands.cpp"
     "${SRC_DIR}/ApexExecutive_ExternalIO.cpp"
+    "${SRC_DIR}/ApexExecutive_LibrarySwap.cpp"
     "${SRC_DIR}/ApexExecutive_Shutdown.cpp"
     "${SRC_DIR}/ApexExecutive_Startup.cpp"
     "${SRC_DIR}/ApexExecutive_TaskExecution.cpp"

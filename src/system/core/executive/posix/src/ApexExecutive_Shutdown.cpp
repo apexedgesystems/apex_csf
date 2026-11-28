@@ -302,7 +302,8 @@ void ApexExecutive::shutdownStage3DrainTasks() noexcept {
 
   if (scheduler_.threadsRunning()) {
     sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TASK_DRAIN_TIMEOUT),
-                     "Tasks still running after timeout (5s), proceeding with shutdown");
+                     "Tasks still running after timeout (5s); the shutdown goes on and waits "
+                     "for them before the scheduler stops");
   } else {
     sysLog_->info(label(), "All tasks drained successfully");
   }
@@ -360,6 +361,7 @@ void ApexExecutive::shutdownStage5FinalStats() noexcept {
   }
   sysLog_->info(label(), fmt::format("Watchdog warnings: {}",
                                      watchdogState_.warningCount.load(std::memory_order_relaxed)));
+  sysLog_->info(label(), fmt::format("Action phases skipped: {}", actionPhaseSkips()));
 
   // Profiling statistics if enabled
   if (profilingState_.isActive() && profilingState_.sampleCount > 0) {

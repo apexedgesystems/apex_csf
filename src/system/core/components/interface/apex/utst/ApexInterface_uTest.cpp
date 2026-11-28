@@ -461,8 +461,9 @@ TEST(ApexInterfaceTest, AprotoNoopOverSlip) {
   EXPECT_EQ(shutStatus, Status::SUCCESS);
 }
 
-/** @test APROTO PING command over SLIP echoes payload back. */
-TEST(ApexInterfaceTest, AprotoPingOverSlip) {
+/// Sends one PING carrying `pingPayload` over SLIP and expects the ACK to
+/// echo it after the ACK payload.
+static void expectPingEchoes(std::uint16_t port, const std::vector<std::uint8_t>& pingPayload) {
   ApexInterface iface;
 
   ApexInterfaceTunables tun{};
@@ -470,7 +471,7 @@ TEST(ApexInterfaceTest, AprotoPingOverSlip) {
     std::string host = "127.0.0.1";
     std::snprintf(tun.host.data(), tun.host.size(), "%s", host.c_str());
   }
-  tun.port = 6210;
+  tun.port = port;
   tun.framing = FramingType::SLIP;
 
   ASSERT_EQ(iface.configure(tun), Status::SUCCESS);
@@ -496,7 +497,6 @@ TEST(ApexInterfaceTest, AprotoPingOverSlip) {
   const std::uint16_t OPCODE = static_cast<std::uint16_t>(aproto::SystemOpcode::PING);
   const std::uint16_t SEQ = 100;
   const std::uint32_t IFACE_UID = iface.fullUid();
-  std::vector<std::uint8_t> pingPayload = {0xDE, 0xAD, 0xBE, 0xEF};
   auto packet =
       buildAprotoPacket(IFACE_UID, OPCODE, SEQ,
                         apex::compat::rospan<std::uint8_t>{pingPayload.data(), pingPayload.size()});
@@ -534,6 +534,23 @@ TEST(ApexInterfaceTest, AprotoPingOverSlip) {
   poller.join();
   auto shutStatus = iface.shutdown();
   EXPECT_EQ(shutStatus, Status::SUCCESS);
+}
+
+/** @test APROTO PING command over SLIP echoes payload back. */
+TEST(ApexInterfaceTest, AprotoPingOverSlip) { expectPingEchoes(6210, {0xDE, 0xAD, 0xBE, 0xEF}); }
+
+/**
+ * @test A PING payload longer than the gap between the reply's ACK payload
+ *       and the request's header is echoed whole. The reply is assembled
+ *       in the buffer the request was decoded into, so past that length
+ *       the copy's source and destination overlap.
+ */
+TEST(ApexInterfaceTest, AprotoPingEchoesPayloadThatOverlapsItsReply) {
+  std::vector<std::uint8_t> payload(200);
+  for (std::size_t i = 0; i < payload.size(); ++i) {
+    payload[i] = static_cast<std::uint8_t>(0x30U + (i * 7U) % 61U);
+  }
+  expectPingEchoes(6211, payload);
 }
 
 /** @test APROTO NOOP command over COBS returns ACK.

@@ -235,29 +235,17 @@ std::uint8_t SchedulerMultiThread::doInit() noexcept {
                                               pools_[i]->workerCount()));
   }
 
-  // Count total task instances across all ticks for pool sizing, and the
-  // largest single-tick burst -- the number of contexts one tick can demand
-  // before any completion returns a context to the pool.
   std::size_t totalTaskInstances = 0;
-  std::size_t maxTickBurst = 0;
   for (const auto& tickIndices : schedule_) {
     totalTaskInstances += tickIndices.size();
-    maxTickBurst = std::max(maxTickBurst, tickIndices.size());
   }
 
-  // Pre-allocate context pools. Capacity must cover the densest tick with
-  // every one of its tasks dispatched before any completes, plus headroom
-  // for tasks still in flight from earlier ticks. Sizing from worker count
-  // alone starves dense ticks, and in production (fallback allocation
-  // disabled) a starved acquire has no heap escape.
-  for (std::size_t i = 0; i < pools_.size(); ++i) {
-    const std::size_t POOL_SIZE = maxTickBurst + pools_[i]->workerCount() * 2;
-    ctxPools_[i]->preallocate(POOL_SIZE);
-
+  sizeContextPools();
 #ifdef NDEBUG
-    ctxPools_[i]->setFallbackAlloc(false);
-#endif
+  for (auto& ctxPool : ctxPools_) {
+    ctxPool->setFallbackAlloc(false);
   }
+#endif
 
   componentLog()->info(label(),
                        fmt::format("Total task instances in schedule: {}", totalTaskInstances));
@@ -281,6 +269,34 @@ std::uint8_t SchedulerMultiThread::doInit() noexcept {
   return static_cast<std::uint8_t>(Status::SUCCESS);
 }
 
+/* ----------------------------- Context Capacity ----------------------------- */
+
+void SchedulerMultiThread::sizeContextPools() noexcept {
+  // The largest single-tick burst is the number of contexts one tick can
+  // demand before any completion returns one to its pool.
+  std::size_t maxTickBurst = 0;
+  for (const auto& tickIndices : schedule_) {
+    maxTickBurst = std::max(maxTickBurst, tickIndices.size());
+  }
+
+  // Capacity must cover the densest tick with every one of its tasks
+  // dispatched before any completes, plus headroom for tasks still in
+  // flight from earlier ticks. Sizing from worker count alone starves
+  // dense ticks, and in production (fallback allocation disabled) a
+  // starved acquire has no heap escape.
+  for (std::size_t i = 0; i < ctxPools_.size(); ++i) {
+    ctxPools_[i]->reserve(maxTickBurst + pools_[i]->workerCount() * 2);
+  }
+}
+
+Status SchedulerMultiThread::addTask(SchedulableTask& task, const TaskConfig& config) noexcept {
+  const Status RC = SchedulerBase::addTask(task, config);
+  if (RC == Status::SUCCESS) {
+    sizeContextPools();
+  }
+  return RC;
+}
+
 /* ----------------------------- Execution ----------------------------- */
 
 Status SchedulerMultiThread::executeTasksOnTickMulti(std::uint16_t tick) noexcept {
@@ -301,23 +317,15 @@ Status SchedulerMultiThread::executeTasksOnCycleMulti(std::uint64_t cycle) noexc
   periodViolationsThisTick_ = 0;
 
   // Collect errors from async task completions (from previous ticks)
-  // Check all pools for errors
-  bool hadErrors = false;
   auto* lg = componentLog();
   const int LOG_LEVEL = lg ? static_cast<int>(lg->level()) : 0;
-
-  for (auto& pool : pools_) {
+  // The test for pending errors stays in line: one load per pool on
+  // every dispatch, and a call only when a task failed.
+  bool hadErrors = false;
+  for (const auto& pool : pools_) {
     if (pool->hasErrors()) {
-      auto errors = pool->collectErrors();
-      while (!errors.empty()) {
-        hadErrors = true;
-        auto err = errors.front();
-        errors.pop();
-        if (lg && static_cast<int>(logs::SystemLog::Level::WARNING) >= LOG_LEVEL) {
-          lg->warning(label(), static_cast<std::uint8_t>(Status::WARN_TASK_NON_SUCCESS_RET),
-                      fmt::format("Task '{}' returned error code {}", err.label, err.errorCode));
-        }
-      }
+      hadErrors = logCompletionErrors(lg, LOG_LEVEL);
+      break;
     }
   }
 
@@ -341,12 +349,21 @@ Status SchedulerMultiThread::executeTasksOnCycleMulti(std::uint64_t cycle) noexc
   // pays a single read regardless of table size.
   const std::uint64_t DISPATCH_NS = apex::helpers::cpu::getMonotonicNs();
 
-  // A slot that holds a multi-second task takes the gated loop; every
-  // other slot takes the plain one, which tests nothing per visit.
-  if (slotHasGated_[TIDX] != 0U) {
-    dispatchSlot<true>(entryIndices, cycle, tick, DISPATCH_NS, lg, LOG_LEVEL);
+  // A slot that holds a multi-second task takes a gated loop; every
+  // other slot takes one that tests nothing per visit. A slot that holds
+  // a sequenced task is dispatched in two steps, so each such task can be
+  // placed among the tasks of its group that run with it.
+  const bool GATED = slotHasGated_[TIDX] != 0U;
+  if (slotHasSequenced_[TIDX] != 0U) {
+    if (GATED) {
+      dispatchSlot<true, true>(entryIndices, cycle, tick, DISPATCH_NS, lg, LOG_LEVEL);
+    } else {
+      dispatchSlot<false, true>(entryIndices, cycle, tick, DISPATCH_NS, lg, LOG_LEVEL);
+    }
+  } else if (GATED) {
+    dispatchSlot<true, false>(entryIndices, cycle, tick, DISPATCH_NS, lg, LOG_LEVEL);
   } else {
-    dispatchSlot<false>(entryIndices, cycle, tick, DISPATCH_NS, lg, LOG_LEVEL);
+    dispatchSlot<false, false>(entryIndices, cycle, tick, DISPATCH_NS, lg, LOG_LEVEL);
   }
 
   const Status OUT = hadErrors ? Status::WARN_TASK_NON_SUCCESS_RET : Status::SUCCESS;
@@ -354,11 +371,15 @@ Status SchedulerMultiThread::executeTasksOnCycleMulti(std::uint64_t cycle) noexc
   return OUT;
 }
 
-template <bool kGated>
+template <bool kGated, bool kSequenced>
 void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryIndices,
                                         [[maybe_unused]] std::uint64_t cycle, std::uint16_t tick,
                                         std::uint64_t dispatchNs, logs::SystemLog* lg,
                                         int logLevel) noexcept {
+  if constexpr (kSequenced) {
+    slotDispatch_.clear();
+    ++seqStamp_;
+  }
   for (std::size_t idx : entryIndices) {
     TaskEntry& entry = entries_[idx];
 
@@ -409,12 +430,149 @@ void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryInd
       //  - HARD_PERIOD_COMPLETE: Clock thread will FATAL, warning redundant
       //  - SOFT modes: Violations expected, count tracked for shutdown summary
     }
-    enqueueTask(&entry, tick, dispatchNs);
+    if constexpr (kSequenced) {
+      if (entry.isSequenced()) {
+        // What this tick knows of the entry's group, set the first time
+        // the group is met on it. A group counts its completions from
+        // rest. While any of its tasks is still running from an earlier
+        // tick the count is under way, and a task dispatched into it
+        // would be counted with that tick: it could wrap the counter
+        // under a task still waiting, which then never runs. So the
+        // group is not dispatched again until it has come to rest; its
+        // tasks due now are skipped and counted, whether or not busy
+        // tasks are otherwise skipped. The question is asked before any
+        // task of the group is handed over on this tick and its answer
+        // kept, so a task found running is of an earlier one.
+        SeqGroupState& group = seqGroups_[entry.seqGroup];
+        if (group.stamp != seqStamp_) {
+          group.stamp = seqStamp_;
+          group.head = NO_SLOT_DISPATCH;
+          group.together = 0;
+          group.aheadOfPhase = 0;
+          group.lastPhase = entry.seqPhase;
+          group.busy = false;
+          group.unordered = false;
+          for (const std::size_t MEMBER : group.entries) {
+            if (entries_[MEMBER].stillRunning()) {
+              group.busy = true;
+              break;
+            }
+          }
+        }
+        if (group.busy) {
+          ++entry.skipCount;
+          ++totalSkipCount_;
+          if (lg && static_cast<int>(logs::SystemLog::Level::WARNING) >= logLevel) {
+            lg->warning(label(), static_cast<std::uint8_t>(Status::WARN_PERIOD_VIOLATION),
+                        fmt::format("Skipping task '{}' at tick {} (its sequence group is still "
+                                    "running, skip #{})",
+                                    entry.task->getLabel(), tick, entry.skipCount));
+          }
+          continue;
+        }
+        // It goes to its pool with its wait unset: a worker that takes it
+        // holds at the start of the trampoline until placeSequencedSlot()
+        // has placed it. A pool can refuse any entry, and which it
+        // refused is known only once the slot has been walked.
+        TaskCtx* const CTX = enqueueTask<true>(&entry, tick, dispatchNs);
+        if (CTX != nullptr) {
+          // A group's entries normally sit on the slot in ascending
+          // phase order, the order its preflight asks for. Then every
+          // entry accepted before a new phase begins is ahead of it,
+          // and the count is kept as the entries come. An entry that
+          // comes after one of a higher phase sends its group to the
+          // walk in placeSequencedSlot().
+          if (entry.seqPhase > group.lastPhase) {
+            group.aheadOfPhase = group.together;
+            group.lastPhase = entry.seqPhase;
+          } else if (entry.seqPhase < group.lastPhase) {
+            group.unordered = true;
+          }
+          slotDispatch_.push_back({&entry, CTX, group.head, group.aheadOfPhase});
+          group.head = static_cast<std::uint32_t>(slotDispatch_.size() - 1U);
+          ++group.together;
+        }
+        continue;
+      }
+    }
+    enqueueTask<false>(&entry, tick, dispatchNs);
+  }
+  if constexpr (kSequenced) {
+    placeSequencedSlot();
+  }
+}
+
+void SchedulerMultiThread::placeSequencedSlot() noexcept {
+  // A group's counter rests at 1 between ticks and each of the group's
+  // tasks advances it once when it completes. So a task that must follow
+  // AHEAD tasks waits for the counter to reach AHEAD + 1, and the last
+  // completion of TOGETHER tasks wraps it back to 1. Both are counted
+  // over the entries the pools accepted this tick: a task whose earlier
+  // phases are not on this tick, were skipped, or were refused by their
+  // pool waits for none of them, and the counter wraps without them. The
+  // count ahead was kept as the entries were accepted; a group whose
+  // entries did not come in phase order is walked along its chain.
+  for (const SlotDispatch& item : slotDispatch_) {
+    const SeqGroupState& GROUP = seqGroups_[item.entry->seqGroup];
+    std::uint32_t ahead = item.ahead;
+    if (GROUP.unordered) {
+      ahead = 0;
+      for (std::uint32_t at = GROUP.head; at != NO_SLOT_DISPATCH; at = slotDispatch_[at].next) {
+        if (slotDispatch_[at].entry->seqPhase < item.entry->seqPhase) {
+          ++ahead;
+        }
+      }
+    }
+    item.ctx->seqMaxPhase = static_cast<int>(GROUP.together);
+    item.ctx->seqPhase.store(static_cast<int>(ahead) + 1, std::memory_order_release);
   }
 }
 
 bool SchedulerMultiThread::waitForInFlightTasks(std::uint64_t timeoutNs) noexcept {
   return waitForInFlightTasksUntil(apex::helpers::cpu::getMonotonicNs() + timeoutNs);
+}
+
+bool SchedulerMultiThread::logCompletionErrors(logs::SystemLog* lg, int logLevel) noexcept {
+  bool hadErrors = false;
+  for (auto& pool : pools_) {
+    if (pool->hasErrors()) {
+      auto errors = pool->collectErrors();
+      while (!errors.empty()) {
+        hadErrors = true;
+        auto err = errors.front();
+        errors.pop();
+        if (lg && static_cast<int>(logs::SystemLog::Level::WARNING) >= logLevel) {
+          lg->warning(label(), static_cast<std::uint8_t>(Status::WARN_TASK_NON_SUCCESS_RET),
+                      fmt::format("Task '{}' returned error code {}", err.label, err.errorCode));
+        }
+      }
+    }
+  }
+  return hadErrors;
+}
+
+bool SchedulerMultiThread::settled() noexcept {
+  // An entry reads idle once each of its invocations has run to the mark
+  // its worker sets inside the task call. A pool reads idle once every
+  // worker that entered a task call has left it and has filed the call's
+  // completion record. This thread is the only one that dispatches, so
+  // with both idle nothing is queued, running or completing.
+  for (const TaskEntry& entry : entries_) {
+    if (entry.stillRunning()) {
+      return false;
+    }
+  }
+  for (const auto& pool : pools_) {
+    if (pool->threadsRunning()) {
+      return false;
+    }
+  }
+
+  // The completion records carry task labels; logging them here leaves
+  // none behind.
+  auto* lg = componentLog();
+  static_cast<void>(logCompletionErrors(lg, lg ? static_cast<int>(lg->level()) : 0));
+  return true;
 }
 
 bool SchedulerMultiThread::waitForInFlightTasksUntil(std::uint64_t deadlineNs) noexcept {
@@ -481,11 +639,13 @@ std::uint8_t SchedulerMultiThread::taskTrampoline(void* raw) noexcept {
   auto* ctx = static_cast<TaskCtx*>(raw);
   TaskEntry* entry = ctx->entry;
 
-  // Wait for sequencing phase if this task is sequenced. An aborted
+  // Wait for sequencing phase if this task is sequenced: first for the
+  // tick thread to place this dispatch, then for the counter. An aborted
   // wait (scheduler stopping) skips execution and the phase advance --
   // the chain is dying, and advancing would fake phase completion.
   if (entry != nullptr && entry->isSequenced()) {
-    if (!waitForPhase(*entry->seqCounter, entry->seqPhase, &ctx->self->stopping_)) {
+    const int WAIT = awaitPlacement(*ctx);
+    if (WAIT == 0 || !waitForPhase(*entry->seqCounter, WAIT, &ctx->self->stopping_)) {
       entry->markCompleted();
       const std::uint8_t poolIdAbort = ctx->poolId;
       if (poolIdAbort < ctx->self->ctxPools_.size()) {
@@ -499,7 +659,7 @@ std::uint8_t SchedulerMultiThread::taskTrampoline(void* raw) noexcept {
 
   // Advance sequencing counter after task completion
   if (entry != nullptr && entry->isSequenced()) {
-    advancePhase(*entry->seqCounter, entry->seqMaxPhase);
+    advancePhase(*entry->seqCounter, ctx->seqMaxPhase);
   }
 
   // Mark task as completed (for deadline tracking)
@@ -517,8 +677,37 @@ std::uint8_t SchedulerMultiThread::taskTrampoline(void* raw) noexcept {
   return rc;
 }
 
-void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
-                                       std::uint64_t dispatchNs) noexcept {
+int SchedulerMultiThread::awaitPlacement(const TaskCtx& ctx) noexcept {
+  // The tick thread places a dispatch before it leaves the slot that
+  // enqueued it, a few entries' work after the enqueue, so the wait is a
+  // spin in all but one case: the tick thread losing its CPU inside the
+  // slot. Past the spin the worker sleeps in short slices, which gives
+  // the CPU up under every scheduling policy and needs no wake from the
+  // tick thread.
+  constexpr unsigned SPIN_LIMIT = 1024U;
+  constexpr std::uint64_t SLEEP_NS = 20000U;
+  apex::helpers::cpu::ExponentialBackoff bk;
+  for (;;) {
+    const int WAIT = ctx.seqPhase.load(std::memory_order_acquire);
+    if (WAIT != 0) {
+      return WAIT;
+    }
+    if (ctx.self->stopping_.load(std::memory_order_acquire)) {
+      return 0;
+    }
+    if (bk.n < SPIN_LIMIT) {
+      bk.spinOnce();
+    } else {
+      std::this_thread::sleep_for(std::chrono::nanoseconds(SLEEP_NS));
+    }
+  }
+}
+
+template <bool kUnplaced>
+std::conditional_t<kUnplaced, TaskCtx*, void>
+SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
+                                  std::uint64_t dispatchNs) noexcept {
+  using Out = std::conditional_t<kUnplaced, TaskCtx*, void>;
   // First drop and every interval-th after: surfaces sustained exhaustion
   // without logging at tick rate from the dispatch path. Power of two so the
   // modulo compiles to a mask; the totalDispatchDrops_ counter stays exact.
@@ -547,7 +736,7 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
                             "(total drops: {})",
                             task->getLabel(), tick, totalDispatchDrops_));
     }
-    return;
+    return static_cast<Out>(nullptr);
   }
 
   // Mark task as dispatched (for deadline tracking)
@@ -556,6 +745,9 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
   ctx->tick = tick;
   ctx->poolId = poolId;
   ctx->entry = entry; // Store entry for sequencing in trampoline
+  if constexpr (kUnplaced) {
+    ctx->seqPhase.store(0, std::memory_order_relaxed);
+  }
   const auto STATUS = pools_[poolId]->tryEnqueue(task->getLabel().data(), {&taskTrampoline, ctx});
   if (STATUS != apex::concurrency::PoolStatus::SUCCESS) {
     // Bounded ring rejected the dispatch (full ring = the pool stopped
@@ -574,7 +766,9 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
                             "(status {}, total drops: {})",
                             task->getLabel(), tick, static_cast<int>(STATUS), totalDispatchDrops_));
     }
+    return static_cast<Out>(nullptr);
   }
+  return static_cast<Out>(ctx);
 }
 
 } // namespace scheduler

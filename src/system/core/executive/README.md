@@ -161,6 +161,113 @@ upload to place a corrected set, VERIFY_TPRM to check it, and
 RELOAD_EXECUTIVE to reboot onto the fix. `--shutdown-after` still
 applies, so automated runs exit rather than hang.
 
+## Library Reload
+
+RELOAD*LIBRARY replaces a locked component with one loaded from
+`<name>*<instance>.so` in the inactive library bank. It runs in three
+steps, on the threads that own what each step touches:
+
+| Step    | Thread                                  | Work                                                                                                                       |
+| ------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Prepare | ExternalIO                              | load the library, create the instance, give it its log, load its parameters, initialize it, archive the old instance's log |
+| Publish | TaskExecution                           | bind the scheduler's entries, the registry's entries and the component list to the new instance                            |
+| Reclaim | ExternalIO, at the top of its next loop | destroy the plugin the swap replaced and close its library                                                                 |
+
+Publication happens only while the scheduler reports every dispatched
+task settled (no task queued or running, no worker still filing a task's
+completion) and ExternalIO is waiting for it. TaskExecution is the thread
+that drains commands to components, dispatches tasks and runs the action
+phase, so at that point nothing resolves the component while its
+bindings change. The new instance is dispatched from the next cycle; the
+old one stays locked.
+
+- **What is bound.** In the scheduler, each entry's task and, for a
+  sequenced task, its group's counter; the scheduler keeps its own copy
+  of component names. In the registry, the component entry, each
+  registered data block and each registered task. INSPECT, action data
+  access, telemetry and the shared-memory bridge read the new instance's
+  blocks from the next lookup on. Data consumers resolve per use: a
+  pointer kept from an earlier lookup names the replaced instance.
+- **Compatibility.** The replacement must provide every registered data
+  block (same category, name and size) and every scheduled task,
+  sequenced in a group at the same phase, with the tasks of one sequence
+  in one group again. Otherwise the reply is
+  `REGISTRY_FAILED` or `TASK_MISMATCH` and nothing was bound. Data
+  blocks beyond the registered ones are not added: the registry is frozen.
+- **Wait.** ExternalIO hands the swap to TaskExecution and blocks until
+  it is published, two seconds pass (four clock periods when that is
+  longer) or TaskExecution ends. Command and telemetry I/O wait with it. TaskExecution takes
+  the swap after a cycle whose tasks finished within their frame,
+  between cycles, or while paused.
+- **Refusal.** If the tasks do not settle within the wait, the reply is
+  `NOT_QUIESCENT`. A task that overruns every frame keeps a reload out
+  until it returns. After any refusal the new instance is destroyed and
+  the old one is unlocked and unchanged.
+- **Bus.** A schedulable replacement is attached to the internal bus
+  after it initializes. It is published locked, told the bus is ready
+  (`onBusReady()`) on ExternalIO, then unlocked, so none of its tasks
+  runs before that call returns. The lock stops task dispatch only, so
+  from the publication until that call returns TaskExecution also runs
+  no action phase and delivers no queued command: an action or a command
+  could otherwise read or command the replacement beside its hook. The
+  cycles go on meanwhile and their tasks run; actions and queued
+  commands are taken up on the first cycle after the hook returns. A
+  hook that takes long holds every action and every queued command that
+  long, not only those for the replacement.
+- **Hardware models.** A reload whose old or new instance is a hardware
+  model is refused with `NOT_SWAPPABLE` (`reason=hw_model_transport` in
+  the swap log), for a registered hardware model before a library is
+  looked for and for a replacement before it is initialized: the far end of
+  the model's transport link is in a driver's hands and is not carried
+  to a new instance.
+- **From an action.** A RELOAD_LIBRARY an action sends reaches the
+  handler on TaskExecution. It is recorded (`RELOAD_LIBRARY_DEFERRED` in
+  the swap log) and run by ExternalIO at the top of its next loop, so no
+  library is loaded and no component initialized inside a cycle. The
+  action's command returns once recorded; the outcome is in the system
+  log and the swap log. One request can wait at a time; a second is
+  refused with `NOT_SWAPPABLE`.
+- **Cost when no reload is in hand.** TaskExecution loads one flag on
+  each wake (an exchange follows only when it is set) and one after each
+  cycle whose tasks finished; its tick and pause wait predicates load
+  the first flag when evaluated. ExternalIO checks an empty list and
+  loads one word per loop.
+
+The swap log times the steps apart: `RELOAD_LIBRARY_PUBLISHED`
+carries the wait for publication (`wait_us`), `RELOAD_LIBRARY_OK` the
+whole command from its start to the publication's bookkeeping
+(`total_us`), `RELOAD_LIBRARY_READY` the replacement's `onBusReady()`
+(`hook_us`) and the cycles whose action phase was held from the
+publication until it returned (`cycles_held`), and
+`RELOAD_LIBRARY_RECLAIMED` the destruction of the replaced plugin (`us`).
+
+The clock thread names the tasks in flight when it logs a frame loss.
+It reads the scheduler's table for that under the scheduler's
+`TableRead`, which a reload's change to the table waits out and which
+never makes the clock wait: a frame loss logged while the table is
+being changed reads `in-flight: unavailable (task table changing)`.
+
+A component lock stops new dispatches of the component's tasks. It does
+not wait for a task already running; the reload does.
+
+**Parameter reload.** `RELOAD_TPRM` goes through the same hand-over.
+ExternalIO verifies the staged payload, then TaskExecution calls the
+component's `loadTprm()` between cycles, with every dispatched task
+settled and none dispatched meanwhile: the load cannot meet a run of
+the component's tasks, the dispatch that reads the scheduler's tables
+(the scheduler's own reload rebuilds them) or the action phase. The
+payload file is read on TaskExecution in that call. If the tasks do
+not settle within the wait the reply is `NOT_QUIESCENT` and nothing is
+loaded. A `RELOAD_TPRM` an action sends reaches the handler on
+TaskExecution in its action phase, which runs only once the cycle's
+tasks have finished, and loads there.
+
+At shutdown the scheduler is stopped by `run()` after its threads have
+been joined: TaskExecution, which alone dispatches and alone publishes a
+swap, has ended, and the components and loaded plugins are still alive.
+When TaskExecution ends, a reload still waiting for publication is
+refused with `NOT_QUIESCENT` at once.
+
 ## Usage
 
 ```bash
@@ -232,7 +339,7 @@ rate under test.
 
 | Dir           | Contents                                                         | In CI suite? |
 | ------------- | ---------------------------------------------------------------- | ------------ |
-| `posix/utst/` | Struct/config unit tests (status, RT mode, data, shutdown)       | Yes          |
+| `posix/utst/` | Struct/config unit tests; RELOAD_LIBRARY on a live executive     | Yes          |
 | `base/utst/`  | IExecutive contract tests                                        | Yes          |
 | `core/utst/`  | ExecutiveCore identity/contract tests                            | Yes          |
 | `mcu/utst/`   | MCU executive unit tests                                         | Yes          |
@@ -243,18 +350,49 @@ rate under test.
 |               | cumulative drift vs the deadline grid, wake lateness) at the     |              |
 |               | rate `CADENCE_HZ` selects                                        |              |
 
+`posix/ptst/` also holds `ExecutiveTaskLoop_PTEST`: the task thread's
+own CPU time per cycle (`CLOCK_THREAD_CPUTIME_ID`, read once per cycle),
+with nothing scheduled and with one registered component's no-work task
+dispatched every cycle, and the task runs delivered in the measured
+window. `TASKLOOP_CYCLES` (default 1000), `TASKLOOP_WARMUP` (100) and
+`TASKLOOP_HZ` (100) size a run; `TASKLOOP_CSV` appends every sample.
+
 The dtst and ptst tiers boot a real `ApexExecutive` (config-less CLI
 boot, cycle-target shutdown) and assert wall-clock spans, so they run
 manually on an otherwise-idle host.
 
 ## RT Safety
 
-| Function              | RT-Safe | Notes                       |
-| --------------------- | ------- | --------------------------- |
-| `init()`              | No      | Allocates, performs I/O     |
-| `run()`               | Yes     | Main loop is RT-safe        |
-| `shutdown()`          | No      | Joins threads, flushes logs |
-| `registerComponent()` | No      | Modifies registry           |
+| Function              | RT-Safe | Notes                                                    |
+| --------------------- | ------- | -------------------------------------------------------- |
+| `init()`              | No      | Allocates, performs I/O                                  |
+| `run()`               | No      | Starts and joins threads; see below for the cycle within |
+| `shutdown()`          | No      | Joins threads, flushes logs                              |
+| `registerComponent()` | No      | Modifies registry                                        |
+
+`run()` as a whole is not RT-safe. It starts the executive's threads,
+and it ends by joining them and then waiting for every task still
+running to return, with no bound on how long a task body takes.
+
+Inside it, TaskExecution's cycle (take the tick, deliver queued
+commands, dispatch, wait within the frame for the cycle's tasks, run
+the action phase) is the path built to a deadline. This document claims
+no bound for it. What a configuration achieves is measured on its
+target, and the departures from a fixed cost on that thread are these:
+
+- **`RELOAD_TPRM`.** The component's `loadTprm()` runs on TaskExecution
+  between two cycles and reads the payload file there. The time depends
+  on the file and the storage and is logged per reload (`load_us`).
+- **`RELOAD_LIBRARY`.** The publication runs on TaskExecution between
+  two cycles under the hand-over's mutex. Until the replacement has been
+  told the bus is ready, TaskExecution runs no action phase and delivers
+  no queued command.
+- **Queued commands.** A command delivered on TaskExecution runs the
+  target component's handler, which is component code.
+- **Events.** A warning logged from the cycle (a skipped action phase, a
+  dropped or skipped dispatch) formats a string and allocates.
+- **Pause and shutdown.** A paused TaskExecution parks, and at shutdown
+  it leaves its loop; neither is part of a cycle's cost.
 
 ## See Also
 

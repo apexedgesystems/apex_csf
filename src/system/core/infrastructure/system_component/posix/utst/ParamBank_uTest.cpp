@@ -48,7 +48,7 @@ bool nonNegative(const TestParams& p) noexcept { return p.value >= 0; }
 /// fullUid the file-load tests stamp and expect.
 constexpr std::uint32_t TEST_UID = 0x00AB01;
 
-/** @brief Helper to create a temporary v3-stamped payload file. */
+/** @brief Helper to create a temporary v4-stamped payload file. */
 class TempParamsFile {
 public:
   explicit TempParamsFile(const TestParams& p, std::uint32_t fullUid = TEST_UID) {
@@ -192,7 +192,7 @@ TEST(ParamBankTest, LoadFileLayoutMismatch) {
   EXPECT_FALSE(bank.isLoaded());
 }
 
-/** @test load(path): a bare struct image with no prelude is not a v3 payload. */
+/** @test load(path): a bare struct image with no prelude is not a v4 payload. */
 TEST(ParamBankTest, LoadFileRejectsUnstampedImage) {
   ParamBank<TestParams> bank{};
   const TestParams P{3, 0};
@@ -326,6 +326,60 @@ TEST(ParamBankTest, ApplyHotReload) {
   ASSERT_EQ(bank.apply(), Status::SUCCESS);
   EXPECT_EQ(bank.active().value, 20);
   EXPECT_EQ(bank.activeGeneration(), 2u);
+}
+
+/** @test The first publish uses up the staged set: apply() needs a new load. */
+TEST(ParamBankTest, ApplyAfterPublishInitialNeedsANewLoad) {
+  ParamBank<TestParams> bank{};
+  ASSERT_EQ(bank.load(TestParams{10, 0}, nonNegative), Status::SUCCESS);
+  ASSERT_EQ(bank.publishInitial(), Status::SUCCESS);
+  EXPECT_FALSE(bank.isLoaded());
+
+  // The other bank holds the constructor's defaults, which nothing validated.
+  EXPECT_EQ(bank.apply(), Status::ERROR_NOT_CONFIGURED);
+  EXPECT_EQ(bank.active().value, 10);
+  EXPECT_EQ(bank.activeGeneration(), 1u);
+  EXPECT_FALSE(bank.canRollback());
+
+  // Already published still reads as a no-op, not as a missing load.
+  EXPECT_EQ(bank.publishInitial(), Status::WARN_NOOP);
+}
+
+/** @test apply() uses up the staged set: a second apply() does not republish the old one. */
+TEST(ParamBankTest, SecondApplyNeedsANewLoad) {
+  ParamBank<TestParams> bank{};
+  ASSERT_EQ(bank.load(TestParams{10, 0}, nonNegative), Status::SUCCESS);
+  ASSERT_EQ(bank.publishInitial(), Status::SUCCESS);
+  ASSERT_EQ(bank.load(TestParams{20, 0}, nonNegative), Status::SUCCESS);
+  ASSERT_EQ(bank.apply(), Status::SUCCESS);
+  EXPECT_FALSE(bank.isLoaded());
+
+  EXPECT_EQ(bank.apply(), Status::ERROR_NOT_CONFIGURED);
+  EXPECT_EQ(bank.active().value, 20);
+  EXPECT_EQ(bank.activeGeneration(), 2u);
+
+  // The refused apply() left the rollback to 10 in place.
+  ASSERT_TRUE(bank.canRollback());
+  ASSERT_EQ(bank.rollback(), Status::SUCCESS);
+  EXPECT_EQ(bank.active().value, 10);
+}
+
+/** @test rollback() stages nothing: apply() after it needs a new load. */
+TEST(ParamBankTest, ApplyAfterRollbackNeedsANewLoad) {
+  ParamBank<TestParams> bank{};
+  ASSERT_EQ(bank.load(TestParams{10, 0}, nonNegative), Status::SUCCESS);
+  ASSERT_EQ(bank.publishInitial(), Status::SUCCESS);
+  ASSERT_EQ(bank.load(TestParams{20, 0}, nonNegative), Status::SUCCESS);
+  ASSERT_EQ(bank.apply(), Status::SUCCESS);
+  ASSERT_EQ(bank.rollback(), Status::SUCCESS);
+  ASSERT_EQ(bank.active().value, 10);
+
+  EXPECT_EQ(bank.apply(), Status::ERROR_NOT_CONFIGURED);
+  EXPECT_EQ(bank.active().value, 10);
+
+  ASSERT_EQ(bank.load(TestParams{30, 0}, nonNegative), Status::SUCCESS);
+  EXPECT_EQ(bank.apply(), Status::SUCCESS);
+  EXPECT_EQ(bank.active().value, 30);
 }
 
 /* ----------------------------- Rollback ----------------------------- */

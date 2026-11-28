@@ -128,14 +128,17 @@ Load and run via the operations client:
 
 ```python
 # Upload sequence file (compiled by the build)
-# Transfer paths are filesystem-root-relative; upload into the bank.
+# Transfer paths are filesystem-root-relative; upload into the bank,
+# under the name of the slot it is for. The executive loads every
+# slot-named file in the bank at its next start and warns about any
+# other name it finds there.
 c2.send_file(
     "build/hosted-x86_64-debug/demos/apex_ops_demo/exec/tprm/rts/001.rts",
-    "bank_a/rts/noop_sweep.rts",
+    "bank_a/rts/000.rts",
 )
 
 # Load into slot 0 (LOAD paths are bank-relative).
-c2.send_command(0x000500, 0x0500, b"\x00rts/noop_sweep.rts\x00")
+c2.send_command(0x000500, 0x0500, b"\x00rts/000.rts\x00")
 
 # Start
 c2.start_rts(0)

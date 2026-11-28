@@ -239,17 +239,26 @@ This separation enables:
 
 ### Preflight & Observability
 
-| Surface           | Opcode / OUTPUT                                                    | Purpose                                                                                                                                                                       |
-| ----------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Table feasibility | `RUN_PREFLIGHT` 0x0104 / `GET_PREFLIGHT` 0x0105 / `tablePreflight` | Static verdicts at load: missing pools (FAIL), dispatch burst (WARN + evidence), chain dispatch-order liveness (FAIL), chain shape (WARN)                                     |
-| Task census       | `RUN_TASK_CENSUS` 0x0102 / `GET_TASK_CENSUS` 0x0103 / `taskCensus` | Pre-clock execution pass: cold first-run vs steady cost per task against its period budget; strictly refused after ticks start (`--task-census` runs it at executive startup) |
-| Runtime stats     | `GET_TASK_STATS` 0x0101 / `taskStats`                              | Per-task last/max runtime, overruns, deadline violations                                                                                                                      |
-| Requirements      | `GET_REQUIREMENTS` 0x0106 / `requirements`                         | Declared host needs per pool: policy, priority, affinity mask, workers -- consumers correlate host posture against these                                                      |
-| Health            | `GET_HEALTH` 0x0100 / `health`                                     | Aggregate scheduler health snapshot                                                                                                                                           |
+| Surface           | Opcode / OUTPUT                                                    | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Table feasibility | `RUN_PREFLIGHT` 0x0104 / `GET_PREFLIGHT` 0x0105 / `tablePreflight` | Static verdicts at load: missing pools (FAIL), dispatch burst (WARN + evidence), chain dispatch-order liveness (FAIL), chain shape (WARN: as many waiting tasks on one instant as the pool has workers), tasks the table sequences and their component does not (FAIL). Tasks are counted together only on the cycles they share: a slot that holds tasks paced over several seconds is taken second by second over the span their paces repeat after, within a fixed budget; a slot past the budget is taken with every task due, reported as an upper bound, and an order hazard seen only there is a WARN. The hazard counts stop at 255; a verdict does not depend on its count |
+| Task census       | `RUN_TASK_CENSUS` 0x0102 / `GET_TASK_CENSUS` 0x0103 / `taskCensus` | Pre-clock execution pass: cold first-run vs steady cost per task against its period budget; strictly refused after ticks start (`--task-census` runs it at executive startup)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Runtime stats     | `GET_TASK_STATS` 0x0101 / `taskStats`                              | Per-task last/max runtime, overruns, deadline violations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Requirements      | `GET_REQUIREMENTS` 0x0106 / `requirements`                         | Declared host needs per pool: policy, priority, affinity mask, workers -- consumers correlate host posture against these                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Health            | `GET_HEALTH` 0x0100 / `health`                                     | Aggregate scheduler health snapshot                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 All surfaces ride the generic component command path and the registry;
 no consumer is privileged. Hard-RT FATALs name their violating task,
 and frame-loss events list the tasks in flight when cycles fall behind.
+
+The frame-loss list is read on the clock thread while the thread that
+dispatches may be changing the table (a table reload, a component's
+tasks rebound to a replacement, a task added). `inFlightSummary()` reads
+under a `TableRead`, which never blocks: a change waits for the reads
+already begun, and a read that arrives during a change returns
+`unavailable (task table changing)` without touching the entries. Any
+other reader of `entries()` off the dispatching thread takes a
+`TableRead` the same way.
 
 ### Deadline Semantics
 
@@ -362,7 +371,13 @@ scheduler.addTask(taskStep, cfg, &seq);
 scheduler.addTask(taskPost, cfg, &seq);
 ```
 
-Phase numbers account for task count: if 2 tasks run at phase 1, the next phase is 3.
+Phases are an order. The scheduler places each task among the tasks of its group that it dispatches on the same tick, so the numbers only have to sort: counting tasks as above (two at phase 1, the next at 3) and numbering 1, 2, 3 come to the same thing.
+
+The tasks of a group may run at different rates. A 100 Hz step and a 1 Hz report at a later phase share a tick once a second; on that tick the report waits for the step, and on the others the step runs alone and waits for nothing. A task whose earlier phases are not dispatched on its tick (another rate, another offset, skipped while busy) does not wait for them.
+
+The same holds for a task its pool refuses (no free context, or the pool's ring rejecting it): it is a counted drop, the tasks of its group that were handed over neither wait for it nor count it, and the group's counter is back at 1 when they finish. A sequenced task is handed to its pool before its place is known and its worker holds until the tick thread has tried every entry of the slot, so the place is always among the tasks that were accepted.
+
+A group still running from an earlier tick is not dispatched again. While any of its tasks is running or waiting, the tasks of the group due on a tick are skipped and counted (`totalSkipCount()`, a warning per skip), in every real-time mode and whether or not busy tasks are otherwise skipped: a task dispatched into a group that is mid-count would be counted with the unfinished tick. A task that is itself still running also raises the period violation as before.
 
 ### McuScheduler for MCUs
 
@@ -454,8 +469,8 @@ scheduler.init();  // Creates scheduler.log with schedule layout
 | `config`        | TaskConfig for this task                         |
 | `holdCtr`       | Frequency decimation counter                     |
 | `seqCounter`    | Shared sequencing counter (null = no sequencing) |
-| `seqPhase`      | Phase to wait for                                |
-| `seqMaxPhase`   | Max phase (for counter wrap)                     |
+| `seqPhase`      | Registered phase: the task's place in its group  |
+| `seqMaxPhase`   | The group's registered maximum phase             |
 | `shouldRun()`   | Check if task runs this tick                     |
 | `isSequenced()` | Check if task has sequencing                     |
 | `resetHold()`   | Reset decimation counter                         |

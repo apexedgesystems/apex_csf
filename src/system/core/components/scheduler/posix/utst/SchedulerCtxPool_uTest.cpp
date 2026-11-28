@@ -10,6 +10,7 @@
  *     drops and zero fallback allocations
  *   - Nothing is left mid-flight after the burst: the next dispatch tick
  *     sees no period violations and no skips
+ *   - Context capacity follows a table that grows after init
  */
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerMultiThread.hpp"
@@ -168,6 +169,39 @@ TEST_F(SchedulerCtxBurstTest, DenseTickDispatchesAllTasksWithoutFallback) {
   EXPECT_EQ(scheduler_->periodViolationsThisTick(), 0U);
   EXPECT_EQ(scheduler_->totalSkipCount(), 0U);
   EXPECT_EQ(scheduler_->totalDispatchDrops(), 0U);
+
+  scheduler_->shutdown();
+}
+
+/**
+ * @test Tasks added after init get contexts: the pool grows with the
+ *       table's densest tick, and a burst wider than the capacity init
+ *       left dispatches whole with on-demand allocation switched off.
+ */
+TEST_F(SchedulerCtxBurstTest, ContextsFollowATableThatGrowsAfterInit) {
+  auto del = bindMember<SchedulerCtxBurstTest, &SchedulerCtxBurstTest::holdAndCount>(this);
+
+  ASSERT_EQ(scheduler_->init(), static_cast<std::uint8_t>(Status::SUCCESS));
+  scheduler_->setContextFallback(false);
+  const std::size_t AT_INIT = scheduler_->ctxPoolReserved(0);
+  ASSERT_LT(AT_INIT, BURST_TASKS) << "the empty table's capacity was to be below the burst";
+
+  std::vector<std::unique_ptr<SchedulableTask>> tasks;
+  std::vector<std::string> labels;
+  tasks.reserve(BURST_TASKS);
+  labels.reserve(BURST_TASKS);
+  TaskConfig cfg(100, 1, 0);
+  for (std::size_t i = 0; i < BURST_TASKS; ++i) {
+    labels.push_back("late" + std::to_string(i));
+    tasks.push_back(std::make_unique<SchedulableTask>(del, labels.back().c_str()));
+    ASSERT_EQ(scheduler_->addTask(*tasks.back(), cfg), Status::SUCCESS);
+  }
+  EXPECT_EQ(scheduler_->ctxPoolReserved(0), AT_INIT + BURST_TASKS);
+
+  ASSERT_EQ(scheduler_->executeTasksOnTickMulti(0), Status::SUCCESS);
+  waitForCompletions(BURST_TASKS);
+  EXPECT_EQ(scheduler_->totalDispatchDrops(), 0U)
+      << "a task added after init found no context on the densest tick";
 
   scheduler_->shutdown();
 }

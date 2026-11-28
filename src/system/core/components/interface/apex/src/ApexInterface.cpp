@@ -543,11 +543,15 @@ void ApexInterface::enqueueAckNak(std::uint8_t serverId, const aproto::AprotoHea
   ack.stage = static_cast<std::uint8_t>(stage);
   std::memset(ack.reserved, 0, sizeof(ack.reserved));
 
-  // Assemble full payload into frameBuf_ scratch (no heap allocation).
-  std::memcpy(frameBuf_.data(), &ack, ACK_SIZE);
+  // Assemble full payload into frameBuf_ scratch (no heap allocation). The
+  // response data may itself lie in frameBuf_: a request is decoded there
+  // and PING echoes its payload. It is therefore placed first, with a copy
+  // that allows overlap, and the ACK payload is written in front of it
+  // afterwards.
   if (!responsePayload.empty()) {
-    std::memcpy(frameBuf_.data() + ACK_SIZE, responsePayload.data(), responsePayload.size());
+    std::memmove(frameBuf_.data() + ACK_SIZE, responsePayload.data(), responsePayload.size());
   }
+  std::memcpy(frameBuf_.data(), &ack, ACK_SIZE);
 
   // Build response header.
   aproto::AprotoHeader respHdr =

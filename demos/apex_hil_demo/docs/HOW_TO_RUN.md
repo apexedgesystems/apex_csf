@@ -169,7 +169,7 @@ PYTHONPATH=tools/ops/py/apex_ops/src python3 demos/apex_hil_demo/scripts/checkou
     --host raspberrypi.local
 ```
 
-All 56 assertions across 16 tests must pass (0 failures).
+All 67 assertions across 16 tests must pass (0 failures).
 
 ### 13. Verify Post-Checkout Health (optional)
 
@@ -239,7 +239,7 @@ All non-skipped assertions must pass (0 failures).
 
 ## Checkout Test Coverage
 
-The checkout script (`scripts/checkout.py`) runs 16 tests with 56 assertions:
+The checkout script (`scripts/checkout.py`) runs 16 tests with 67 assertions:
 
 | #   | Test                 | Assertions | What it verifies                                                       |
 | --- | -------------------- | ---------- | ---------------------------------------------------------------------- |
@@ -247,18 +247,18 @@ The checkout script (`scripts/checkout.py`) runs 16 tests with 56 assertions:
 | 2   | Component addressing | 11         | NOOP to all 11 registered components                                   |
 | 3   | Clock rate           | 1          | Execution frequency ~1000 Hz                                           |
 | 4   | Executive health     | 4          | Health packet parsing, clock running, not paused, no watchdog warnings |
-| 5   | STM32 driver stats   | 5          | INSPECT driver #0: tx/rx active, 0 CRC errors, 0 tx misses             |
+| 5   | STM32 driver stats   | 7          | INSPECT driver #0: tx/rx active, UART open, 0 CRC errors, misses, gaps |
 | 6   | Comparator           | 3          | Divergence between real and emulated near zero                         |
 | 7   | Sleep / Wake         | 5          | SLEEP command, FLAG_SLEEPING in health, WAKE, clock advancing          |
 | 8   | Lock / Unlock        | 4          | Lock/unlock SystemMonitor, invalid UID returns COMPONENT_NOT_FOUND     |
 | 9   | File transfer        | 4          | Chunked 8KB transfer with CRC-32C, progress callback, state IDLE       |
 | 10  | File transfer abort  | 4          | Abort mid-transfer, state returns to IDLE, clean recovery              |
-| 11  | TPRM reload          | 3          | Transfer TPRM file, RELOAD_TPRM command, system still running          |
-| 12  | RELOAD_LIBRARY       | 4          | Hot-swap TestPlugin .so, NOOP before/after, clock advancing            |
+| 11  | TPRM reload          | 4          | Running payload downloaded, corrupt copy refused, intact copy reloaded |
+| 12  | RELOAD_LIBRARY       | 8          | Hot-swap TestPlugin .so (v2, task running); VFC reload refused         |
 | 13  | C2 latency           | 1          | 20-ping median < 50ms                                                  |
 | 14  | Post-test health     | 1          | Clock rate still ~1000 Hz after all tests                              |
-| 15  | RELOAD_EXECUTIVE     | 2          | Graceful restart via execve, connection drops                          |
-| 16  | Post-restart verify  | 7          | Reconnect, low cycle count, clock rate, all components, not paused     |
+| 15  | RELOAD_EXECUTIVE     | 3          | Graceful restart via execve, connection drops                          |
+| 16  | Post-restart verify  | 6          | Reconnect, low cycle count, clock rate, all components, not paused     |
 
 ### Skipping Tests
 
@@ -284,7 +284,7 @@ python3 checkout.py --host raspberrypi.local --plugin-so path/to/TestPlugin_v2.s
 | DriverEmulated | 0x007A01 | DRIVER   |
 | Comparator     | 0x007B00 | SUPPORT  |
 | SystemMonitor  | 0x00C800 | SUPPORT  |
-| TestPlugin     | 0x00FA00 | SUPPORT  |
+| TestPlugin     | 0x00FA00 | SW_MODEL |
 
 ## Troubleshooting
 

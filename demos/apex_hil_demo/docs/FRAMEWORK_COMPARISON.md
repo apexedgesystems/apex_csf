@@ -502,30 +502,34 @@ Operator:
   2. Send LOCK_COMPONENT (targetUid)  -- scheduler skips tasks
   3. Send RELOAD_LIBRARY (targetUid)
 
-Executive (10-step sequence):
+Executive:
   1. Verify component exists and is locked
   2. Resolve .so path in inactive bank
   3. dlopen(newSo, RTLD_NOW) + dlsym("apex_create_component")
   4. Validate: new componentId must match old componentId
   5. Transfer instanceIndex from old to new component
-  6. new->loadTprm() + new->init()
+  6. Give the new component its log; new->loadTprm() + new->init()
   7. Archive old component's log file (FIFO, max 5 per component)
-  8. scheduler_.replaceComponentTasks(targetUid, *newComp)
-     -- rewire function pointers to new .so symbols
-     -- verify all expected tasks found in new component
-  9. registry_.updateComponent(targetUid, newComp)
-  10. fileSystem_.swapBankFile(LIB_DIR, soName)
-  11. Auto-unlock on success
+  8. Hand the swap to the task thread, which publishes it once every
+     dispatched task has settled:
+     scheduler_.replaceComponentTasks(targetUid, *newComp)
+     registry_.rebindComponent(targetUid, *newComp)
+     -- task pointers, sequence counters, data blocks and names all
+        move to the new instance, or none do
+  9. fileSystem_.swapBankFile(LIB_DIR, soName)
+  10. Destroy the replaced plugin on the external I/O thread's next loop
+
+Steps 1 to 7, 9 and 10 run on the external I/O thread.
 
 Failure at any step:
-  Old component remains locked and running
-  Operator can retry or unlock to restore service
+  Nothing was swapped; the new instance is destroyed and the old
+  component is unlocked and keeps running
 
 Critical detail:
-  Step 8 (task re-wiring) prevents use-after-free. The scheduler stores
-  direct function pointers to task methods. When dlclose unloads the old
-  .so, those pointers become dangling. replaceComponentTasks() atomically
-  updates all task entries before the old library is unloaded.
+  The scheduler and the registry hold pointers into the component: task
+  objects, sequence counters, data blocks, names. Step 8 moves them all
+  while no worker and no command holds the old instance, so nothing
+  dangles when step 10 unloads the old library.
 ```
 
 **Tier 3: RELOAD_EXECUTIVE (full binary swap, process restart)**

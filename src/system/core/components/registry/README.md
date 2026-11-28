@@ -190,18 +190,20 @@ registerData()                           getAllTasks()
 
 ### RT-Safety Summary
 
-| Operation             | RT-Safe | Notes                      |
-| --------------------- | ------- | -------------------------- |
-| `registerComponent()` | No      | Vector growth possible     |
-| `registerTask()`      | No      | Vector growth possible     |
-| `registerData()`      | No      | Vector growth possible     |
-| `freeze()`            | No      | Finalizes registry         |
-| `getComponent()`      | Yes     | O(n) scan, after freeze    |
-| `getTask()`           | Yes     | O(n) scan, after freeze    |
-| `getData()`           | Yes     | O(n) scan, after freeze    |
-| `getAllComponents()`  | Yes     | Returns span, after freeze |
-| `entry->getBytes()`   | Yes     | O(1), pointer arithmetic   |
-| `toString(Status)`    | Yes     | Static string lookup       |
+| Operation              | RT-Safe | Notes                                                               |
+| ---------------------- | ------- | ------------------------------------------------------------------- |
+| `registerComponent()`  | No      | Vector growth possible                                              |
+| `registerTask()`       | No      | Vector growth possible                                              |
+| `registerData()`       | No      | Vector growth possible                                              |
+| `freeze()`             | No      | Finalizes registry                                                  |
+| `getComponent()`       | Yes     | O(n) scan, after freeze                                             |
+| `getTask()`            | Yes     | O(n) scan, after freeze                                             |
+| `getData()`            | Yes     | O(n) scan, after freeze                                             |
+| `canRebindComponent()` | No      | Hot-swap: can a replacement take every entry over                   |
+| `rebindComponent()`    | No      | Hot-swap: point every entry at the replacement, whole or not at all |
+| `getAllComponents()`   | Yes     | Returns span, after freeze                                          |
+| `entry->getBytes()`    | Yes     | O(1), pointer arithmetic                                            |
+| `toString(Status)`     | Yes     | Static string lookup                                                |
 
 ---
 
@@ -461,17 +463,17 @@ auto zBytes = entry->getBytes(16, 8);
 
 | Directory    | Type                   | Tests | Runs with `make test` |
 | ------------ | ---------------------- | ----- | --------------------- |
-| `apex/utst/` | Unit tests             | 80    | Yes                   |
+| `apex/utst/` | Unit tests             | 82    | Yes                   |
 | `apex/ptst/` | Performance benchmarks | 9     | No (manual)           |
 
 ### Test Organization
 
 | Component      | Test File                  | Tests  |
 | -------------- | -------------------------- | ------ |
-| ApexRegistry   | `ApexRegistry_uTest.cpp`   | 55     |
+| ApexRegistry   | `ApexRegistry_uTest.cpp`   | 57     |
 | RegistryData   | `RegistryData_uTest.cpp`   | 16     |
 | RegistryStatus | `RegistryStatus_uTest.cpp` | 9      |
-| **Total**      |                            | **80** |
+| **Total**      |                            | **82** |
 
 ---
 

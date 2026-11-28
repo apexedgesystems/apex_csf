@@ -4,17 +4,14 @@
  *
  * Coverage:
  *  - Shutdown with a phase waiter parked in waitForPhase: a sequenced
- *    task whose earlier phase never ran parks a pool worker; teardown
- *    must wake it and complete anyway. Witnessed in the field as a
- *    post-shutdown zombie (emergency shutdown completed, process never
- *    exited -- pool join blocked on the parked futex).
- *  - Shutdown with a phase-misordered dispatch: phases enqueued out of
- *    order can park every worker with the earlier phase still queued
- *    behind them; teardown must still complete.
+ *    task whose earlier phase has not finished parks a pool worker;
+ *    teardown must wake it and complete anyway. Witnessed in the field
+ *    as a post-shutdown zombie (emergency shutdown completed, process
+ *    never exited -- pool join blocked on the parked futex).
  *
- * Both tests bound teardown with a watchdog deadline instead of letting
- * a regression hang the test binary: shutdown runs on a helper thread
- * and the test asserts completion within the deadline.
+ * Teardown is bounded by a deadline instead of letting a regression hang
+ * the test binary: shutdown runs on a helper thread and the test asserts
+ * completion within the deadline.
  */
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerMultiThread.hpp"
@@ -41,8 +38,6 @@ using system_core::scheduler::TaskConfig;
 
 namespace {
 
-std::uint8_t noopTask(void*) noexcept { return 0; }
-
 std::filesystem::path testLogDir() {
   const auto DIR = std::filesystem::temp_directory_path() /
                    ("scheduler_shutdown_utest_" + std::to_string(::getpid()));
@@ -50,62 +45,103 @@ std::filesystem::path testLogDir() {
   return DIR;
 }
 
-/// Run fn on a helper thread; true if it completed within deadlineMs.
-bool completesWithin(std::chrono::milliseconds deadline, void (*fn)(void*), void* arg) {
-  std::atomic<bool> done{false};
-  std::thread runner([&done, fn, arg]() {
-    fn(arg);
-    done.store(true, std::memory_order_release);
-  });
+/// A phase-1 task that stays in its body until released, and a phase-2
+/// task that must never run.
+struct HeldChain {
+  std::atomic<bool> release{false};
+  std::atomic<bool> held{false};
+  std::atomic<int> waiterRuns{0};
 
-  const auto START = std::chrono::steady_clock::now();
-  while (!done.load(std::memory_order_acquire)) {
-    if (std::chrono::steady_clock::now() - START > deadline) {
-      runner.detach(); // Regression path: leave the stuck thread behind.
-      return false;
+  static std::uint8_t hold(void* raw) noexcept {
+    auto* c = static_cast<HeldChain*>(raw);
+    c->held.store(true, std::memory_order_release);
+    while (!c->release.load(std::memory_order_acquire)) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    return 0;
   }
-  runner.join();
-  return true;
-}
+  static std::uint8_t waiter(void* raw) noexcept {
+    static_cast<HeldChain*>(raw)->waiterRuns.fetch_add(1, std::memory_order_acq_rel);
+    return 0;
+  }
+};
 
 } // namespace
 
 /**
- * @test Teardown completes while a sequenced task is parked mid-phase.
+ * @test Teardown releases a sequenced task parked behind an earlier phase.
  *
- * Only the phase-2 task is dispatched; phase 1 never runs, so the worker
- * parks in waitForPhase with no one coming to advance the counter. The
- * scheduler must wake and release that worker during shutdown.
+ * Phase 1 is inside its body and stays there, so the phase-2 task parks
+ * in waitForPhase with no advance coming. Shutdown must wake that waiter
+ * itself: the test sees the waiter leave without having run while phase 1
+ * is still held, and only then lets phase 1 go.
  */
 TEST(SchedulerShutdownTest, TeardownCompletesWithParkedPhaseWaiter) {
-  auto sched = std::make_unique<SchedulerMultiThread>(100, testLogDir());
-  ASSERT_EQ(sched->init(), 0);
-
+  // The chain, its group and its tasks outlive the scheduler, and phase 1
+  // is released on every way out of this test, so a failed expectation
+  // ends as a failed test.
+  HeldChain chain;
   SequenceGroup seq(2);
-  DelegateU8 del{&noopTask, nullptr};
-  SchedulableTask blocked(del, "phase2_only");
+  SchedulableTask first(DelegateU8{&HeldChain::hold, &chain}, "phase1_held");
+  SchedulableTask blocked(DelegateU8{&HeldChain::waiter, &chain}, "phase2_parked");
+  seq.addTask(first, 1);
   seq.addTask(blocked, 2);
 
-  TaskConfig cfg(100, 1, 0);
-  ASSERT_EQ(sched->addTask(blocked, cfg, &seq), Status::SUCCESS);
+  system_core::scheduler::PoolSpec spec;
+  spec.numThreads = 2;
+  auto sched = std::make_unique<SchedulerMultiThread>(
+      100, testLogDir(), std::vector<system_core::scheduler::PoolSpec>{spec});
+  ASSERT_EQ(sched->init(), 0);
+  struct ReleaseAtExit {
+    HeldChain& chain;
+    ~ReleaseAtExit() { chain.release.store(true, std::memory_order_release); }
+  } releaseAtExit{chain};
 
-  // Dispatch: the phase-2 task parks awaiting a phase-1 advance that
-  // will never come.
+  ASSERT_EQ(sched->addTask(first, TaskConfig(100, 1, 0, 127), &seq), Status::SUCCESS);
+  ASSERT_EQ(sched->addTask(blocked, TaskConfig(100, 1, 0, -128), &seq), Status::SUCCESS);
+
+  // Dispatch: phase 1 enters its body and stays; phase 2 parks behind it.
   (void)sched->executeTasksOnTickMulti(0);
-  std::this_thread::sleep_for(std::chrono::milliseconds(50)); // Let it park.
+  while (!chain.held.load(std::memory_order_acquire)) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(50)); // Let the waiter park.
+  ASSERT_TRUE(sched->entries()[1].stillRunning()) << "phase 2 did not wait behind phase 1";
+  ASSERT_EQ(chain.waiterRuns.load(), 0);
 
-  const bool DONE = completesWithin(
-      std::chrono::milliseconds(3000),
-      [](void* raw) { static_cast<SchedulerMultiThread*>(raw)->shutdown(); }, sched.get());
+  // Shutdown from another thread; it cannot return while phase 1 is held.
+  std::atomic<bool> closed{false};
+  std::thread closer([&sched, &closed]() {
+    sched->shutdown();
+    closed.store(true, std::memory_order_release);
+  });
+
+  // The waiter leaves on shutdown's wake, phase 1 still inside its body.
+  bool waiterLeft = false;
+  for (int i = 0; i < 3000 && !waiterLeft; ++i) {
+    waiterLeft = !sched->entries()[1].stillRunning();
+    if (!waiterLeft) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+  EXPECT_TRUE(waiterLeft) << "shutdown did not wake the parked phase waiter";
+  EXPECT_EQ(chain.waiterRuns.load(), 0) << "an aborted wait must not run its task";
+
+  chain.release.store(true, std::memory_order_release);
+  for (int i = 0; i < 3000 && !closed.load(std::memory_order_acquire); ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  const bool DONE = closed.load(std::memory_order_acquire);
 
   EXPECT_TRUE(DONE) << "shutdown() blocked on a parked phase waiter";
 
   if (DONE) {
+    closer.join();
     sched.reset();
   } else {
-    // Leak deliberately: the destructor would hang the same way.
+    // Leak deliberately: the destructor would hang the same way, and the
+    // helper is still inside shutdown().
+    closer.detach();
     [[maybe_unused]] auto* leaked = sched.release();
   }
 }

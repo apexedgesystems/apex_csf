@@ -30,8 +30,8 @@ Comprehensive C2 verification suite organized in three layers:
     21. Pause / Resume         Pause tasks, verify, resume
     22. Lock / Unlock          Lock component, verify, unlock, error case
     23. SET_VERBOSITY          Log level control
-    24. TPRM reload            Upload new params, reload, verify via INSPECT
-    25. RELOAD_LIBRARY         Hot-swap TestPlugin v1 -> v2
+    24. TPRM reload            Refuse a corrupt payload, load a valid one, restore
+    25. RELOAD_LIBRARY         Hot-swap TestPlugin to v2, verify via INSPECT
     26. RTS sequence           Upload, load, start, verify, stop NOOP sweep
     35. RELOAD_EXECUTIVE       Restart via execve, reconnect, verify
 
@@ -61,6 +61,7 @@ import struct
 import sys
 import tempfile
 import time
+import zlib
 
 sys.path.insert(
     0, str(__import__("pathlib").Path(__file__).resolve().parents[3] / "tools/ops/py/apex_ops/src")
@@ -88,6 +89,71 @@ def check(name: str, condition: bool, detail: str = "") -> bool:
             msg += f"  ({detail})"
         print(msg)
     return condition
+
+
+TPRM_PRELUDE_SIZE = 28
+
+
+def tprm_with_frequency(payload: bytes, frequency: float) -> bytes:
+    """A copy of a WaveGenerator TPRM payload with its frequency replaced.
+
+    The payload is a 28-byte prelude and the parameter block; the block
+    starts with the frequency and the prelude ends with the CRC-32 of the
+    block, which is restamped here.
+    """
+    body = bytearray(payload[TPRM_PRELUDE_SIZE:])
+    struct.pack_into("<f", body, 0, frequency)
+    prelude = bytearray(payload[:TPRM_PRELUDE_SIZE])
+    struct.pack_into("<I", prelude, 24, zlib.crc32(bytes(body)) & 0xFFFFFFFF)
+    return bytes(prelude + body)
+
+
+def wave_gen_frequency(c2) -> float:
+    """WaveGen#0's frequency as INSPECT reads it, or NaN."""
+    extra = c2.inspect(0x00D000, category=1).get("extra", b"")
+    return struct.unpack_from("<f", extra, 0)[0] if len(extra) >= 4 else float("nan")
+
+
+def wait_for_paused(c2, want: bool, limit: float = 3.0) -> bool:
+    """Poll the executive's health until its paused flag reads WANT.
+
+    The flag follows the clock thread, which takes a pause or a resume at
+    its next tick; a fixed wait would be a guess at when that is.
+    """
+    deadline = time.monotonic() + limit
+    while True:
+        extra = c2.send_command(0x000000, proto.EXEC_GET_HEALTH).get("extra", b"")
+        if len(extra) >= 48 and bool(extra[35] & 0x02) == want:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
+def test_plugin_version(c2):
+    """The version in TestPlugin's registered OUTPUT block, or None.
+
+    INSPECT copies the block through the registry's binding to the
+    instance; the plugin never writes it after initialization.
+    """
+    r = c2.inspect(0x00FA00, category=4)
+    extra = r.get("extra", b"")
+    if r["status"] != 0 or len(extra) < 4:
+        return None
+    return struct.unpack_from("<I", extra, 0)[0]
+
+
+def test_plugin_stats(c2) -> tuple:
+    """TestPlugin's GET_STATS reply: (version, task runs), or (None, None).
+
+    The command is routed to the instance and answered beside its task,
+    which counts its runs in an atomic.
+    """
+    r = c2.send_command(0x00FA00, 0x0100)
+    extra = r.get("extra", b"")
+    if r["status"] != 0 or len(extra) < 8:
+        return (None, None)
+    return struct.unpack_from("<II", extra, 0)
 
 
 DIVIDER = "-" * 72
@@ -483,23 +549,11 @@ def run_checkout(args: argparse.Namespace) -> int:
         section("21. Pause / Resume")
         r = c2.pause()
         check("PAUSE returns SUCCESS", r["status"] == 0, r["status_name"])
-        time.sleep(0.3)
-
-        r = c2.send_command(0x000000, proto.EXEC_GET_HEALTH)
-        extra = r.get("extra", b"")
-        if len(extra) >= 48:
-            flags = extra[35]
-            check("Paused flag set after PAUSE", bool(flags & 0x02))
+        check("Paused flag set after PAUSE", wait_for_paused(c2, True))
 
         r = c2.resume()
         check("RESUME returns SUCCESS", r["status"] == 0, r["status_name"])
-        time.sleep(0.3)
-
-        r = c2.send_command(0x000000, proto.EXEC_GET_HEALTH)
-        extra = r.get("extra", b"")
-        if len(extra) >= 48:
-            flags = extra[35]
-            check("Paused flag cleared after RESUME", not bool(flags & 0x02))
+        check("Paused flag cleared after RESUME", wait_for_paused(c2, False))
 
         c1 = c2.get_clock_cycles()
         time.sleep(0.5)
@@ -536,47 +590,73 @@ def run_checkout(args: argparse.Namespace) -> int:
 
         section("24. TPRM Reload")
         if not args.skip_tprm:
-            # Create a TPRM (32 bytes matching WaveGenTunableParams)
-            # Set frequency to 10.0 Hz to verify change via INSPECT
-            tprm_data = struct.pack(
-                "<ffffffff",
-                10.0,  # frequency
-                1.5,  # amplitude
-                0.0,  # dcOffset
-                0.0,  # phaseOffset
-                0.0,  # noiseAmplitude
-                0.5,  # dutyCycle
-                0.0,  # waveType (as float for packing) + reserved
-                0.0,  # reserved2
-            )
-            # Fix waveType byte at offset 24
-            tprm_data = tprm_data[:24] + bytes([0, 0, 0, 0]) + tprm_data[28:]
-
-            with tempfile.NamedTemporaryFile(suffix=".tprm", delete=False) as f:
-                f.write(tprm_data)
-                tprm_file = f.name
-
-            try:
-                result = c2.update_tprm(0x00D000, tprm_file)
-                check(
-                    "TPRM reload accepted",
-                    result["status"] in (0, 5),
-                    result["status_name"],
+            # The payload WaveGen#0 runs on comes from the target, so its
+            # prelude carries the layout hash this build expects; the staged
+            # copies differ from it in the frequency alone.
+            with tempfile.TemporaryDirectory() as tmp:
+                running_file = os.path.join(tmp, "running.tprm")
+                staged_file = os.path.join(tmp, "staged.tprm")
+                r = c2.recv_file("bank_a/tprm/00d000.tprm", running_file)
+                running = b""
+                if r["status"] == 0:
+                    with open(running_file, "rb") as f:
+                        running = f.read()
+                have_running = check(
+                    f"Running TPRM downloaded ({len(running)} bytes)",
+                    len(running) == TPRM_PRELUDE_SIZE + 32,
+                    r["status_name"],
                 )
 
-                # Verify the new frequency via INSPECT
-                if result["status"] == 0:
-                    time.sleep(0.2)
-                    r = c2.inspect(0x00D000, category=1)
-                    extra = r.get("extra", b"")
-                    if len(extra) >= 4:
-                        new_freq = struct.unpack_from("<f", extra, 0)[0]
+                if have_running:
+                    base_freq = struct.unpack_from("<f", running, TPRM_PRELUDE_SIZE)[0]
+                    new_freq = 10.0 if abs(base_freq - 10.0) > 0.5 else 5.0
+
+                    # A payload whose body fails its CRC is refused and
+                    # leaves the parameters as they were.
+                    corrupt = bytearray(tprm_with_frequency(running, new_freq))
+                    corrupt[-1] ^= 0xFF
+                    with open(staged_file, "wb") as f:
+                        f.write(bytes(corrupt))
+                    result = c2.update_tprm(0x00D000, staged_file)
+                    check(
+                        "Corrupt TPRM refused (LOAD_FAILED)",
+                        result["status"] == 5,
+                        result["status_name"],
+                    )
+                    freq = wave_gen_frequency(c2)
+                    check(
+                        f"Frequency unchanged by the refusal ({freq:.1f} Hz)",
+                        abs(freq - base_freq) < 0.1,
+                    )
+
+                    try:
+                        with open(staged_file, "wb") as f:
+                            f.write(tprm_with_frequency(running, new_freq))
+                        result = c2.update_tprm(0x00D000, staged_file)
+                        check("TPRM reload accepted", result["status"] == 0, result["status_name"])
+                        time.sleep(0.2)
+                        freq = wave_gen_frequency(c2)
                         check(
-                            f"Frequency updated to {new_freq:.1f} Hz",
-                            abs(new_freq - 10.0) < 0.1,
+                            f"Frequency updated to {freq:.1f} Hz",
+                            abs(freq - new_freq) < 0.1,
                         )
-            finally:
-                os.unlink(tprm_file)
+                    finally:
+                        # Leave the target on the parameters it started with,
+                        # also when the checks above were cut short. A target
+                        # that can no longer be reached is reported as not
+                        # restored.
+                        try:
+                            result = c2.update_tprm(0x00D000, running_file)
+                            restored, detail = result["status"] == 0, result["status_name"]
+                        except OSError as exc:
+                            restored, detail = False, f"{type(exc).__name__}: {exc}"
+                        check("Original TPRM restored", restored, detail)
+                    time.sleep(0.2)
+                    freq = wave_gen_frequency(c2)
+                    check(
+                        f"Frequency back to {freq:.1f} Hz",
+                        abs(freq - base_freq) < 0.1,
+                    )
         else:
             print("  SKIP  (--skip-tprm)")
 
@@ -596,7 +676,7 @@ def run_checkout(args: argparse.Namespace) -> int:
                         "build",
                         tree,
                         "test_plugins",
-                        "OpsTestPlugin_v2.so",
+                        "TestPlugin_v2.so",
                     )
                     for tree in ("hosted-x86_64-debug", "hosted-x86_64-debug-cpu")
                 ]
@@ -605,6 +685,10 @@ def run_checkout(args: argparse.Namespace) -> int:
                     plugin_so = max(existing, key=os.path.getmtime)
 
             if plugin_so and os.path.isfile(plugin_so):
+                # GET_STATS returns the number of runs of the plugin's task
+                # since the instance was initialized.
+                ticks_before = test_plugin_stats(c2)[1]
+
                 result = c2.update_component(
                     full_uid=0x00FA00,
                     local_so_path=plugin_so,
@@ -616,8 +700,35 @@ def run_checkout(args: argparse.Namespace) -> int:
                     result["status"] == 0,
                     result["status_name"],
                 )
+
+                # Three bindings moved with the swap. A registered block
+                # still bound to the replaced instance reads its version; a
+                # command still routed to it is answered by its build; and
+                # its count no longer moves, where the count of a new
+                # instance starts again from zero and then advances.
+                version = test_plugin_version(c2)
+                check(f"INSPECT reads the v2 build (version={version})", version == 2)
+                stats_version, ticks_after = test_plugin_stats(c2)
+                check(
+                    f"GET_STATS is answered by the v2 build (version={stats_version})",
+                    stats_version == 2,
+                )
+                check(
+                    f"Task count restarted ({ticks_before} before, {ticks_after} after)",
+                    ticks_before is not None
+                    and ticks_after is not None
+                    and ticks_after < ticks_before,
+                )
+                time.sleep(0.5)
+                ticks_later = test_plugin_stats(c2)[1]
+                check(
+                    f"Swapped-in task is running ({ticks_after} then {ticks_later})",
+                    ticks_after is not None
+                    and ticks_later is not None
+                    and ticks_later > ticks_after,
+                )
             else:
-                check("OpsTestPlugin_v2.so found", False, f"path={plugin_so}")
+                check("TestPlugin_v2.so found", False, f"path={plugin_so}")
         else:
             print("  SKIP  (--skip-reload-lib)")
 
@@ -648,11 +759,13 @@ def run_checkout(args: argparse.Namespace) -> int:
             if os.path.isfile(rts_path):
                 # Transfer paths are filesystem-root-relative; LOAD paths are
                 # bank-relative (resolve against the active bank). The pair
-                # must land on the same file: upload into the bank.
-                result = c2.send_file(rts_path, "bank_a/rts/noop_sweep.rts")
+                # must land on the same file: upload into the bank. A file in
+                # the bank's rts directory is named for its slot, which is how
+                # the executive loads it again at the next start.
+                result = c2.send_file(rts_path, "bank_a/rts/000.rts")
                 check("Upload RTS file", result["status"] == 0, result["status_name"])
 
-                load_payload = b"\x00" + b"rts/noop_sweep.rts\x00"
+                load_payload = b"\x00" + b"rts/000.rts\x00"
                 r = c2.send_command(0x000500, proto.ACTION_LOAD_RTS, load_payload)
                 check("LOAD_RTS slot 0", r["status"] == 0, r["status_name"])
 
@@ -895,8 +1008,39 @@ def run_checkout(args: argparse.Namespace) -> int:
                 check(f"Low cycle count after restart ({cycles})", cycles < 2000)
         except Exception as e:
             check("Post-restart connection", False, str(e))
+
+        # A paused system must still take a restart: it is how a hold is
+        # left without a resume. The new process starts unpaused.
+        section("36. Executive Restart From A Pause")
+        try:
+            with AprotoClient(host, port, timeout=timeout) as c2:
+                r = c2.pause()
+                check("PAUSE returns SUCCESS", r["status"] == 0, r["status_name"])
+                check("Paused before the restart", wait_for_paused(c2, True))
+                r = c2.reload_executive()
+                check("RELOAD_EXECUTIVE accepted while paused", r["status"] == 0, r["status_name"])
+        except Exception as e:
+            check("Restart from a pause: connection", False, str(e))
+
+        print("  Waiting 8 seconds for restart...")
+        time.sleep(8.0)
+
+        try:
+            with AprotoClient(host, port, timeout=timeout) as c2:
+                r = c2.noop()
+                check("NOOP after the restart from a pause", r["status"] == 0, r["status_name"])
+                check("Not paused after the restart", wait_for_paused(c2, False, limit=0.0))
+                cycles = c2.get_clock_cycles()
+                check(
+                    f"New process after the restart from a pause ({cycles} cycles)", cycles < 2000
+                )
+                time.sleep(0.5)
+                later = c2.get_clock_cycles()
+                check("Clock advancing after the restart from a pause", later > cycles)
+        except Exception as e:
+            check("Connection after the restart from a pause", False, str(e))
     else:
-        print("\n  SKIP  22. Executive Restart (--skip-restart)")
+        print("\n  SKIP  35, 36. Executive Restart (--skip-restart)")
 
     # -- Final Summary -----------------------------------------------------
     print(f"\n{'=' * 72}")
@@ -915,7 +1059,7 @@ def main():
     parser.add_argument("--skip-reload-lib", action="store_true", help="Skip RELOAD_LIBRARY test")
     parser.add_argument("--skip-tprm", action="store_true", help="Skip TPRM reload test")
     parser.add_argument("--skip-rts", action="store_true", help="Skip RTS sequence test")
-    parser.add_argument("--plugin-so", default=None, help="Path to OpsTestPlugin_v2.so")
+    parser.add_argument("--plugin-so", default=None, help="Path to TestPlugin_v2.so")
     args = parser.parse_args()
     sys.exit(run_checkout(args))
 

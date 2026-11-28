@@ -7,12 +7,11 @@ hardware target.
 
 ## Layout
 
-| Subdir         | Role                                 |
-| -------------- | ------------------------------------ |
-| `wave/`        | Waveform generator library           |
-| `exec/`        | Orchestrator executable              |
-| `test/plugin/` | Test plugin for ops-driven scenarios |
-| `tprm/`        | TPRM configuration files             |
+| Subdir  | Role                       |
+| ------- | -------------------------- |
+| `wave/` | Waveform generator library |
+| `exec/` | Orchestrator executable    |
+| `tprm/` | TPRM configuration files   |
 
 ## Building
 

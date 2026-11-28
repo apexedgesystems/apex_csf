@@ -353,11 +353,15 @@ protected:
     // Seed noise generator from instance index
     state_.get().noiseSeed = static_cast<std::uint32_t>(instanceIndex()) * 2654435761U;
 
-    // Register tasks
-    registerTask<WaveGenerator, &WaveGenerator::waveStep>(
-        static_cast<std::uint8_t>(TaskUid::WAVE_STEP), this, "waveStep");
-    registerTask<WaveGenerator, &WaveGenerator::telemetry>(
-        static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry");
+    // Step + telemetry share sequence group 0 (step phase 0, telemetry
+    // phase 1): telemetry reads the state the step writes, and the step
+    // runs on every tick, so the two share a tick whenever telemetry
+    // runs. The TPRM task table opts in per task.
+    (void)createSequenceGroup(0, 2);
+    registerSequencedTask<WaveGenerator, &WaveGenerator::waveStep>(
+        static_cast<std::uint8_t>(TaskUid::WAVE_STEP), this, "waveStep", 0, 0);
+    registerSequencedTask<WaveGenerator, &WaveGenerator::telemetry>(
+        static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry", 0, 1);
 
     // Register data for registry (enables INSPECT from C2). Tunables are
     // registered through a stable mirror refreshed on every publish -- the

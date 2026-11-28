@@ -433,19 +433,30 @@ bool ApexExecutive::registerComponent(system_core::system_component::SystemCompo
                             comp->label(), comp->componentId(), instanceIdx, comp->fullUid()));
 
   // Step 3: Initialize component log (uses instance index for filename)
-  comp->initComponentLog(logDir);
+  if (!comp->initComponentLog(logDir)) {
+    sysLog_->warning(
+        label(), static_cast<std::uint8_t>(WARN_IO_ERROR),
+        fmt::format(
+            "{} runs without a log: could not open {}_{}.log under {}", comp->label(),
+            comp->componentName(), instanceIdx,
+            (logDir / system_core::system_component::logSubdir(comp->componentType())).string()));
+  }
 
   // Step 4: Load TPRM configuration
   const auto TPRM_INGEST = comp->loadTprm(fileSystem_.tprmDir());
 
-  // Step 4.5: Provision transport for HW_MODEL components
-  if (comp->componentType() == system_core::system_component::ComponentType::HW_MODEL) {
-    auto* hwModel = static_cast<system_core::system_component::HwModelBase*>(comp);
+  // Step 4.5: Provision transport for hardware models
+  if (auto* hwModel = comp->asHwModel()) {
     if (!hwModel->provisionTransport()) {
       sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_IO_ERROR),
                        fmt::format("Transport provisioning failed for {} (0x{:06X})", comp->label(),
                                    comp->fullUid()));
     }
+  } else if (comp->componentType() == system_core::system_component::ComponentType::HW_MODEL) {
+    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_IO_ERROR),
+                     fmt::format("{} (0x{:06X}) reports HW_MODEL but is not a HwModelBase: no "
+                                 "transport provisioned",
+                                 comp->label(), comp->fullUid()));
   }
 
   // Step 5: Initialize the component
@@ -661,7 +672,10 @@ RunResult ApexExecutive::run() noexcept {
   // an external caller wires up a real PPS source.
   timeServer_.setSteadyClock(system_core::time_server::TimeServer::defaultSteadyClock());
   timeServer_.setWallClock(system_core::time_server::TimeServer::defaultWallClock());
-  timeServer_.initComponentLog(fileSystem_.logDir());
+  if (!timeServer_.initComponentLog(fileSystem_.logDir())) {
+    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_IO_ERROR),
+                     "TimeServer runs without a log: its log file could not be opened");
+  }
   recordIngestOutcome(&timeServer_, timeServer_.loadTprm(fileSystem_.tprmDir()));
   {
     const std::uint8_t TIME_SERVER_INIT = timeServer_.init();
@@ -694,7 +708,10 @@ RunResult ApexExecutive::run() noexcept {
   registerCoreComponent(actionComp_);
 
   // Load action engine TPRM (watchpoints, groups, sequences, notifications, actions)
-  actionComp_.initComponentLog(fileSystem_.logDir());
+  if (!actionComp_.initComponentLog(fileSystem_.logDir())) {
+    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_IO_ERROR),
+                     "ActionComponent runs without a log: its log file could not be opened");
+  }
   recordIngestOutcome(&actionComp_, actionComp_.loadTprm(fileSystem_.tprmDir()));
 
   // Auto-load standalone RTS/ATS sequences from banked directories.
@@ -1023,6 +1040,27 @@ RunResult ApexExecutive::run() noexcept {
       threads[i].join();
     }
   }
+
+  // Stop the scheduler here. The task thread, which alone dispatches and
+  // alone publishes a library swap, has been joined, so the entries the
+  // stop reads can no longer change; and the application's components and
+  // the loaded plugins are still alive, so the sequence counters the stop
+  // writes to release waiters still exist. Left to the scheduler's
+  // destructor, the stop would run after both were destroyed.
+  //
+  // A task dispatched before the shutdown was requested is allowed to
+  // finish: no cycle starts after the request, and the stop joins the
+  // workers, so it waits here for a run that outlasted the drain stage
+  // and run() returns only once no task is inside a component.
+  if (scheduler_.threadsRunning()) {
+    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TASK_DRAIN_TIMEOUT),
+                     fmt::format("Waiting for running tasks to return before the scheduler "
+                                 "stops: {}",
+                                 scheduler_.inFlightSummary(4)));
+    sysLog_->flush();
+  }
+  scheduler_.shutdown();
+  sysLog_->info(label(), "Scheduler stopped");
 
   sysLog_->info(label(), "System shutdown completed");
 

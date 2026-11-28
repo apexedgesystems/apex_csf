@@ -7,6 +7,7 @@
 
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
 #include "src/utilities/compatibility/inc/compat_span.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/SystemComponentBase.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/ParamBank.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
 #include <filesystem>
@@ -56,12 +57,17 @@ using TBase::TBase;
                system_core::system_component::Status::SUCCESS;
     }
     if (!loaded) {
+      // The designed defaults stand in for a payload at the first
+      // load only. A live bank keeps the set it runs on when a
+      // reload brings nothing it accepts.
+      if (paramBank_.activeGeneration() != 0) {
+        return TprmIngest::REJECTED;
+      }
       (void)paramBank_.load(SpecSensorTunableParams{});
     }
     // First load publishes the initial generation; a RELOAD on a
     // live bank must APPLY the staged set instead -- publishInitial
-    // is a no-op once a generation is active (silent-no-effect
-    // defect class, caught by zenith 2026-08-22).
+    // is a no-op once a generation is active.
     if (paramBank_.activeGeneration() == 0) {
       (void)paramBank_.publishInitial();
     } else {

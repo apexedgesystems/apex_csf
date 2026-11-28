@@ -20,6 +20,9 @@
  *    that does not skip queues it -- holds the wait after the first
  *    completes, until it too completes.
  *  - With nothing in flight the wait returns at once.
+ *  - settled() is false while an invocation is queued or running, true
+ *    once its worker is done with it, and it logs a completion error
+ *    itself, so no record of a finished task waits for the next dispatch.
  */
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerMultiThread.hpp"
@@ -35,6 +38,8 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <thread>
 #include <vector>
@@ -118,6 +123,41 @@ bool awaitEntry(const HeldTask& task) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
   return true;
+}
+
+/// Poll settled() until it is true; false when a second passes first.
+bool awaitSettled(SchedulerMultiThread& sched) {
+  const auto START = std::chrono::steady_clock::now();
+  while (!sched.settled()) {
+    if (std::chrono::steady_clock::now() - START > std::chrono::seconds(1)) {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::microseconds(100));
+  }
+  return true;
+}
+
+/// A task that fails with a code of its own.
+struct FailingTask {
+  static constexpr std::uint8_t CODE = 77;
+  std::atomic<bool> ran{false};
+
+  static std::uint8_t run(void* self) noexcept {
+    static_cast<FailingTask*>(self)->ran.store(true, std::memory_order_release);
+    return CODE;
+  }
+};
+
+/// Everything written under DIR, file after file.
+std::string slurpTree(const std::filesystem::path& dir) {
+  std::string all;
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(dir)) {
+    if (entry.is_regular_file()) {
+      std::ifstream ifs(entry.path(), std::ios::binary);
+      all.append(std::istreambuf_iterator<char>(ifs), std::istreambuf_iterator<char>());
+    }
+  }
+  return all;
 }
 
 } // namespace
@@ -340,4 +380,63 @@ TEST(SchedulerCompletionBarrierTest, NothingInFlightCompletesImmediately) {
   EXPECT_EQ(sched->totalInFlightWaitTimeouts(), 0U);
 
   sched->shutdown();
+}
+
+/**
+ * @test settled() is false while one invocation runs and another waits
+ *       behind it on the only worker, and true once both are done.
+ */
+TEST(SchedulerCompletionBarrierTest, SettledOnlyOnceEveryInvocationHasLeftItsWorker) {
+  auto sched = schedulerWithWorkers(1U);
+  ASSERT_EQ(sched->init(), 0);
+  EXPECT_TRUE(sched->settled()) << "nothing was dispatched";
+
+  HeldInvocations held;
+  DelegateU8 del{&HeldInvocations::run, &held};
+  SchedulableTask task(del, "held_twice");
+  ASSERT_EQ(sched->addTask(task, TaskConfig(100, 1, 0)), Status::SUCCESS);
+
+  // Two invocations: the first runs, the second waits in the ring.
+  (void)sched->executeTasksOnTickMulti(0);
+  ASSERT_TRUE(awaitStarted(held, 1U));
+  (void)sched->executeTasksOnTickMulti(1);
+  EXPECT_FALSE(sched->settled());
+
+  held.released.store(1U, std::memory_order_release);
+  ASSERT_TRUE(awaitStarted(held, 2U));
+  EXPECT_FALSE(sched->settled()) << "the second invocation is running";
+
+  held.released.store(2U, std::memory_order_release);
+  EXPECT_TRUE(awaitSettled(*sched));
+  EXPECT_EQ(held.finished.load(std::memory_order_acquire), 2U);
+
+  sched->shutdown();
+}
+
+/**
+ * @test settled() logs a finished task's completion error itself: the
+ *       record, which names the task by a pointer to its label, does not
+ *       wait for the next dispatch.
+ */
+TEST(SchedulerCompletionBarrierTest, SettledLogsTheCompletionErrorItFinds) {
+  const auto LOG_DIR = testLogDir() / "settled_error";
+  std::filesystem::create_directories(LOG_DIR);
+  auto sched = std::make_unique<SchedulerMultiThread>(100, LOG_DIR);
+  ASSERT_EQ(sched->init(), 0);
+
+  FailingTask failing;
+  DelegateU8 del{&FailingTask::run, &failing};
+  SchedulableTask task(del, "fails_with_77");
+  ASSERT_EQ(sched->addTask(task, TaskConfig(100, 1, 0)), Status::SUCCESS);
+
+  (void)sched->executeTasksOnTickMulti(0);
+  ASSERT_TRUE(awaitSettled(*sched));
+  EXPECT_TRUE(failing.ran.load(std::memory_order_acquire));
+
+  // No dispatch follows: the line below can only come from settled().
+  sched->shutdown();
+  sched.reset();
+  const std::string LOGGED = slurpTree(LOG_DIR);
+  EXPECT_NE(LOGGED.find("Task 'fails_with_77' returned error code 77"), std::string::npos)
+      << LOGGED;
 }

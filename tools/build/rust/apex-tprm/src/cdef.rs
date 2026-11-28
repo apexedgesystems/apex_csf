@@ -570,6 +570,11 @@ pub fn generate_cmd_base(manifest: &Manifest) -> Result<String, Error> {
     }
     let mut infra_includes = String::new();
     if tunable.is_some() {
+        // loadTprm's outcome type comes from the component base, so the
+        // generated header includes it and stands on its own.
+        infra_includes.push_str(
+            "#include \"src/system/core/infrastructure/system_component/posix/inc/SystemComponentBase.hpp\"\n",
+        );
         infra_includes.push_str(
             "#include \"src/system/core/infrastructure/system_component/posix/inc/ParamBank.hpp\"\n",
         );
@@ -646,11 +651,16 @@ pub fn generate_cmd_base(manifest: &Manifest) -> Result<String, Error> {
              [this](const {ts}& p) noexcept {{ return validateParams(p); }},\n                   \
              &{shout_struct}_LAYOUT_HASH) ==\n               \
              system_core::system_component::Status::SUCCESS;\n    }}\n    \
-             if (!loaded) {{\n      (void)paramBank_.load({ts}{{}});\n    }}\n    \
+             if (!loaded) {{\n      \
+             // The designed defaults stand in for a payload at the first\n      \
+             // load only. A live bank keeps the set it runs on when a\n      \
+             // reload brings nothing it accepts.\n      \
+             if (paramBank_.activeGeneration() != 0) {{\n        \
+             return TprmIngest::REJECTED;\n      }}\n      \
+             (void)paramBank_.load({ts}{{}});\n    }}\n    \
              // First load publishes the initial generation; a RELOAD on a\n    \
              // live bank must APPLY the staged set instead -- publishInitial\n    \
-             // is a no-op once a generation is active (silent-no-effect\n    \
-             // defect class, caught by zenith 2026-08-22).\n    \
+             // is a no-op once a generation is active.\n    \
              if (paramBank_.activeGeneration() == 0) {{\n      \
              (void)paramBank_.publishInitial();\n    }} else {{\n      \
              (void)paramBank_.apply();\n    }}\n    \
@@ -1271,8 +1281,9 @@ mod tests {
     #[test]
     fn spec_base_reload_applies_not_republishes() {
         // RELOAD on a live bank must apply() -- publishInitial() is a
-        // no-op after the first generation (the silent-no-effect
-        // defect zenith isolated on 2026-08-22).
+        // no-op after the first generation. A reload that brings no
+        // accepted set leaves the live bank alone and reports REJECTED;
+        // the defaults stand in at the first load only.
         let m = parse_manifest_str(
             r#"
             component = "X"
@@ -1292,6 +1303,12 @@ mod tests {
         let h = generate_cmd_base(&m).unwrap();
         assert!(h.contains("if (paramBank_.activeGeneration() == 0) {"));
         assert!(h.contains("(void)paramBank_.apply();"));
+        let refusal = h
+            .find("if (paramBank_.activeGeneration() != 0) {\n        return TprmIngest::REJECTED;")
+            .expect("a refused reload returns before the defaults are staged");
+        let defaults = h.find("(void)paramBank_.load(XTunableParams{});").unwrap();
+        assert!(refusal < defaults);
+        assert!(h.contains("posix/inc/SystemComponentBase.hpp"));
         // Tasks drive doInit; the derived method binds by name.
         assert!(h.contains("registerTask<TDerived, &TDerived::step>"));
         assert!(h.contains("STEP = 1,"));

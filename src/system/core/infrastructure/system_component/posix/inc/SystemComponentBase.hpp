@@ -27,6 +27,7 @@
 #include "src/utilities/compatibility/inc/compat_span.hpp"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -60,6 +61,8 @@ inline constexpr std::size_t COMPONENT_NAME_MAX_LEN = 32;
 
 /// Maximum data descriptors per component.
 inline constexpr std::size_t MAX_DATA_PER_COMPONENT = 16;
+
+class HwModelBase;
 
 /* ----------------------------- DataDescriptor ----------------------------- */
 
@@ -301,6 +304,17 @@ public:
   virtual void onBusReady() noexcept {}
 
   /**
+   * @brief This component as a hardware model, or nullptr when it is none.
+   *
+   * The framework reaches a hardware model's transport through this. A
+   * class can report ComponentType::HW_MODEL without deriving from
+   * HwModelBase, so the reported type is not a basis for a cast.
+   *
+   * @note RT-safe: O(1).
+   */
+  [[nodiscard]] virtual HwModelBase* asHwModel() noexcept { return nullptr; }
+
+  /**
    * @brief Look up a schedulable task by UID.
    *
    * The UID argument (task identifier within this component) is unnamed in the
@@ -361,33 +375,51 @@ public:
 
   /**
    * @brief Lock component for runtime update (reflash, TPRM reload).
-   * @note While locked: scheduler skips tasks, interface NAKs commands, action engine skips
-   * watchpoints.
+   * @note While locked the scheduler dispatches none of its tasks. A task
+   *       dispatched before the lock runs to its end; the lock does not
+   *       wait for it.
    * @note NOT RT-safe: Control-plane only (called by executive on CMD_LOCK_COMPONENT).
    */
-  void lock() noexcept { locked_ = true; }
+  void lock() noexcept { locked_.set(true); }
 
   /**
    * @brief Unlock component after runtime update completes.
    * @note NOT RT-safe: Control-plane only (called by executive on CMD_UNLOCK_COMPONENT).
    */
-  void unlock() noexcept { locked_ = false; }
+  void unlock() noexcept { locked_.set(false); }
 
   /**
    * @brief Check if component is locked for runtime update.
-   * @return true if locked (scheduler should skip, interface should NAK).
-   * @note RT-safe: Simple member read.
+   * @return true if locked (the scheduler skips its tasks).
+   * @note RT-safe: One atomic load. The control plane writes the flag on
+   *       its thread and the dispatching thread reads it.
    */
-  [[nodiscard]] bool isLocked() const noexcept { return locked_; }
+  [[nodiscard]] bool isLocked() const noexcept { return locked_.get(); }
+
+  /**
+   * @brief Path of this component's dedicated log file.
+   * @param logDir Root of the log tree (e.g., ".apex_fs/logs").
+   * @return "{logDir}/{type subdirectory}/{componentName}_{instanceIndex}.log",
+   *         with the subdirectory logSubdir() names for the component's type.
+   * @note The name, type and instance index are read at the call:
+   *       meaningful after setInstanceIndex().
+   * @note NOT RT-safe: Allocates.
+   */
+  [[nodiscard]] std::filesystem::path
+  componentLogPath(const std::filesystem::path& logDir) const noexcept;
 
   /**
    * @brief Initialize dedicated component log file.
-   * @param logDir Directory for component log files (e.g., ".apex_fs/logs/core").
-   * @note Creates log file named "{componentName}_{instanceIndex}.log" in the specified directory.
+   * @param logDir Root of the log tree (e.g., ".apex_fs/logs").
+   * @return true when the log file is open. false when its directory or
+   *         the file could not be created: the log is installed all the
+   *         same, and it drops every line.
+   * @note The file is componentLogPath(logDir); its subdirectory is
+   *       created when missing.
    * @note Must be called AFTER setInstanceIndex() (needs instance index for filename).
    * @note NOT RT-safe: File I/O.
    */
-  void initComponentLog(const std::filesystem::path& logDir) noexcept;
+  [[nodiscard]] bool initComponentLog(const std::filesystem::path& logDir) noexcept;
 
 protected:
   /**
@@ -455,7 +487,31 @@ private:
   std::shared_ptr<logs::SystemLog> componentLog_{nullptr};
   IInternalBus* internalBus_{nullptr};
   bool configured_{false};
-  bool locked_{false};
+  /// The lock flag: atomic for the dispatching thread's read, and carried
+  /// along when the component is moved. A component is moved only before
+  /// it is registered, so no other thread reads either side of a move.
+  class LockFlag {
+  public:
+    LockFlag() noexcept = default;
+    ~LockFlag() = default;
+    LockFlag(const LockFlag& other) noexcept : value_(other.get()) {}
+    LockFlag& operator=(const LockFlag& other) noexcept {
+      set(other.get());
+      return *this;
+    }
+    LockFlag(LockFlag&& other) noexcept : value_(other.get()) {}
+    LockFlag& operator=(LockFlag&& other) noexcept {
+      set(other.get());
+      return *this;
+    }
+
+    void set(bool locked) noexcept { value_.store(locked, std::memory_order_release); }
+    [[nodiscard]] bool get() const noexcept { return value_.load(std::memory_order_acquire); }
+
+  private:
+    std::atomic<bool> value_{false};
+  };
+  LockFlag locked_{};
 
   // Command statistics (system-wide tracking).
   std::uint64_t commandCount_{0};

@@ -9,6 +9,11 @@ include(apex/All)
 set(PERF_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/ShmRingBridge_pTest.cpp")
 
 apex_add_ptest(
-  TARGET SystemCoreSupportShmRingBridge_PTEST SOURCES ${PERF_TEST_SOURCES} LINK
+  TARGET
+  SystemCoreSupportShmRingBridge_PTEST
+  SOURCES
+  ${PERF_TEST_SOURCES}
+  LINK
   system_core_support_shm_ring_bridge
+  system_core_registry
 )

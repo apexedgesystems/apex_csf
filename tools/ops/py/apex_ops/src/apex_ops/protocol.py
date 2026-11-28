@@ -118,7 +118,7 @@ NAK_NAMES = {
     4: "TARGET_NOT_FOUND/COMPONENT_NOT_FOUND",
     5: "LOAD_FAILED",
     6: "EXEC_FAILED",
-    # 7-12 are the executive's ExecCommandResult block (extends the
+    # 7-13 are the executive's ExecCommandResult block (extends the
     # component CommandResult space); 10-15 are also file-transfer codes
     # (context-dependent, same convention as 3/4 above).
     7: "DLOPEN_FAILED",
@@ -127,7 +127,7 @@ NAK_NAMES = {
     10: "TRANSFER_IN_PROGRESS/TASK_MISMATCH",
     11: "NO_TRANSFER/REGISTRY_FAILED",
     12: "CHUNK_OUT_OF_ORDER/INGEST_HELD",
-    13: "CRC_MISMATCH",
+    13: "CRC_MISMATCH/NOT_QUIESCENT",
     14: "WRITE_FAILED",
     15: "PATH_INVALID",
     # 17-20 are the PluginLoader's block (dlopen through ABI gate).

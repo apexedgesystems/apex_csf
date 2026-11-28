@@ -105,6 +105,13 @@ shared-library closure (via the CMake `package_<APP>` install-component target),
 copies firmware artifacts for bare-metal targets, and creates a combined
 tarball. POSIX packages include TPRM configuration and a launch script.
 
+A firmware app built for one board names it in its manifest
+(`APP_<app>_<platform>_BOARD`). Its image is then configured for that
+board and built in the board's own directory, `build/<preset>-<board>`,
+so the release does not depend on which board the platform's shared
+directory was last configured for. An app that names no board releases
+from the shared directory.
+
 Output structure:
 
 ```

@@ -229,8 +229,17 @@ struct TaskEntry {
   /// The group must outlive every entry registered against it -- the same
   /// lifetime the addTask(task, config, group) seam already requires.
   std::atomic<int>* seqCounter{nullptr};
-  int seqPhase{0};    ///< Phase to wait for.
-  int seqMaxPhase{0}; ///< Max phase (for wrap).
+  int seqPhase{0};    ///< The task's phase in its group, as registered: its place in the order.
+  int seqMaxPhase{0}; ///< The group's registered maximum phase.
+  /// Which of the scheduler's sequence groups the task is in: an index the
+  /// scheduler assigns to every entry that shares this one's counter.
+  /// Meaningful only when isSequenced().
+  std::uint16_t seqGroup{0};
+
+  /// The task table asked for this task to be sequenced. Sequencing is the
+  /// component's to offer, so the request can go unmet; the preflight
+  /// reports an entry that asked and is not sequenced.
+  bool seqRequested{false};
 
   /** @brief Check if this entry has sequencing enabled. */
   [[nodiscard]] bool isSequenced() const noexcept { return seqCounter != nullptr; }

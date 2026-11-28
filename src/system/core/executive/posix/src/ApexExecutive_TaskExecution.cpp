@@ -72,6 +72,10 @@ inline char* computeProfilingMetrics(const TimingPoints& tp, std::uint16_t tick,
 /* ----------------------------- Task Execution ----------------------------- */
 
 void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
+  // A reload command that reaches its handler on this thread is handed
+  // to the external I/O thread.
+  taskThreadId_.store(std::this_thread::get_id(), std::memory_order_release);
+
   // Wait for startup signal
   {
     std::unique_lock lock(cvMutex_);
@@ -131,8 +135,22 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
         return taskState_.stepPending.load(std::memory_order_acquire) ||
                taskState_.cycles.load(std::memory_order_acquire) <
                    clockState_.cycles.load(std::memory_order_acquire) ||
-               controlState_.shutdownRequested.load(std::memory_order_acquire);
+               controlState_.shutdownRequested.load(std::memory_order_acquire) ||
+               swapKick_.load(std::memory_order_acquire);
       });
+    }
+
+    // A library swap asked for one attempt between cycles. Woken for that
+    // alone, with no tick owed, the thread goes back to waiting.
+    if (swapKick_.load(std::memory_order_acquire) &&
+        swapKick_.exchange(false, std::memory_order_acq_rel)) {
+      serviceLibrarySwap();
+      const bool TICK_OWED = taskState_.stepPending.load(std::memory_order_acquire) ||
+                             taskState_.cycles.load(std::memory_order_acquire) <
+                                 clockState_.cycles.load(std::memory_order_acquire);
+      if (!TICK_OWED && !controlState_.shutdownRequested.load(std::memory_order_acquire)) {
+        continue;
+      }
     }
 
     // Check shutdown after wake (covers both emergency and normal shutdown)
@@ -179,7 +197,11 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
     // which also frames replies, so the encoder scratch and the pipe
     // have one owner.
     if (interface_ && interface_->isInitialized()) {
-      interface_->drainCommandsToComponents();
+      // Queued commands stay queued while a published replacement is
+      // being told the bus is ready: one of them may be for it.
+      if (!replacementPreparing_.load(std::memory_order_acquire)) {
+        interface_->drainCommandsToComponents();
+      }
 
       // Deferred RELOAD_EXECUTIVE: the ACK was framed and produced by the
       // external I/O thread on receipt, which also writes the wire. Give
@@ -306,18 +328,33 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
       }
     }
     if (TASKS_DONE) {
+      // A library swap another thread handed over is published here,
+      // with this cycle's tasks finished and none dispatched since.
+      if (swapPending_.load(std::memory_order_acquire)) {
+        serviceLibrarySwap();
+      }
+
       // Run action engine: evaluate watchpoints, tick sequences, apply
-      // data-writes, on the completed tasks' outputs.
-      actionComp_.tick(static_cast<std::uint32_t>(taskCycles));
+      // data-writes, on the completed tasks' outputs. Not while a
+      // replacement this thread published is still inside onBusReady()
+      // on the external I/O thread: an action could read or command it
+      // beside the hook. The engine is level- and time-driven, so a held
+      // cycle resolves on the next one that runs.
+      if (replacementPreparing_.load(std::memory_order_acquire)) {
+        actionPhaseHolds_.fetch_add(1U, std::memory_order_relaxed);
+      } else {
+        actionComp_.tick(static_cast<std::uint32_t>(taskCycles));
+      }
     } else if (!controlState_.shutdownRequested.load(std::memory_order_acquire)) {
       constexpr std::size_t BARRIER_LOG_INTERVAL = 1024U;
       const std::size_t TIMEOUTS = scheduler_.totalInFlightWaitTimeouts();
       if (TIMEOUTS == 1U || (TIMEOUTS % BARRIER_LOG_INTERVAL) == 0U) {
         sysLog_->warning(label(), static_cast<std::uint8_t>(0x01),
                          fmt::format("Action phase skipped at cycle {}: a task is still "
-                                     "running at the wait's end{} (total skips: {})",
+                                     "running at the wait's end{} (total skips: {}) -- "
+                                     "in-flight: {}",
                                      taskCycles, BACKLOG ? ", polled while behind the clock" : "",
-                                     TIMEOUTS));
+                                     TIMEOUTS, scheduler_.inFlightSummary(4)));
       }
     }
 
@@ -369,11 +406,22 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
       sysLog_->info(label(), fmt::format("Task execution paused at cycle {}",
                                          taskState_.cycles.load(std::memory_order_acquire)));
 
+      // Parked until resume or shutdown. A library swap wakes the thread
+      // for one attempt and it parks again.
       std::unique_lock lock(cvMutex_);
-      cvPause_.wait(lock, [this]() {
-        return !controlState_.isPaused.load(std::memory_order_acquire) ||
-               controlState_.shutdownRequested.load(std::memory_order_acquire);
-      });
+      for (;;) {
+        cvPause_.wait(lock, [this]() {
+          return !controlState_.isPaused.load(std::memory_order_acquire) ||
+                 controlState_.shutdownRequested.load(std::memory_order_acquire) ||
+                 swapKick_.load(std::memory_order_acquire);
+        });
+        if (!swapKick_.exchange(false, std::memory_order_acq_rel)) {
+          break;
+        }
+        lock.unlock();
+        serviceLibrarySwap();
+        lock.lock();
+      }
 
       if (controlState_.shutdownRequested.load(std::memory_order_acquire)) {
         break;
@@ -382,6 +430,14 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
       sysLog_->info(label(), "Task execution resumed");
     }
   }
+
+  // No swap is published from here on: a caller waiting for one is told
+  // now instead of at the end of its wait.
+  {
+    std::lock_guard lock(swapMutex_);
+    swapClosed_ = true;
+  }
+  cvSwapDone_.notify_all();
 
   sysLog_->info(label(), fmt::format("Task execution stopped ({} cycles)",
                                      taskState_.cycles.load(std::memory_order_acquire)));

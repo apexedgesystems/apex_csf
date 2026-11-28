@@ -77,6 +77,8 @@ public:
     return ComponentType::HW_MODEL;
   }
 
+  [[nodiscard]] HwModelBase* asHwModel() noexcept final { return this; }
+
   /**
    * @brief Declare the transport this HW_MODEL requires.
    *
@@ -98,6 +100,9 @@ public:
    *
    * After provisioning, the model can use transportRead()/transportWrite()
    * and the executive can read peerDevicePath() or peerFd() for driver wiring.
+   *
+   * Calling it again keeps the link already open: the peer endpoint may
+   * be in the driver's hands.
    *
    * @return true if transport is ready (or not needed), false on failure.
    * @note NOT RT-safe: Delegates to provisionTransport() in TransportLink.hpp.

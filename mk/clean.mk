@@ -153,6 +153,7 @@ define _clean_platform_target
 clean-$(1):
 	$$(call log,clean,Removing $(1) build trees)
 	@rm -rf build/$(P_$(1)_PRESET) $(if $(P_$(1)_DEBUG),build/$(P_$(1)_DEBUG))
+	@rm -rf $$(wildcard build/$(P_$(1)_PRESET)-*)
 endef
 $(foreach p,$(_CLEAN_PLATFORMS),$(eval $(call _clean_platform_target,$(p))))
 

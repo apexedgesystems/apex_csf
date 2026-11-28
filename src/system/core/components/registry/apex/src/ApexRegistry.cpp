@@ -6,6 +6,7 @@
 #include "src/system/core/components/registry/apex/inc/ApexRegistry.hpp"
 #include "src/system/core/components/registry/apex/inc/RegistryExport.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/DataCategory.hpp"
+#include "src/system/core/infrastructure/schedulable/inc/SchedulableTask.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 
 #include <cstring>
@@ -246,6 +247,72 @@ apex::compat::span<TaskEntry> ApexRegistry::getAllTasks() noexcept {
 
 apex::compat::span<const TaskEntry> ApexRegistry::getAllTasks() const noexcept {
   return {tasks_.data(), tasks_.size()};
+}
+
+/* ----------------------------- Rebind (hot-swap) ----------------------------- */
+
+namespace {
+
+/// The replacement's data block for a registered entry, or nullptr.
+const system_component::DataDescriptor*
+counterpartOf(const DataEntry& entry, const system_component::SystemComponentBase& replacement) {
+  for (std::size_t i = 0; i < replacement.dataCount(); ++i) {
+    const auto* desc = replacement.dataDescriptor(i);
+    if (desc != nullptr && desc->ptr != nullptr && desc->name != nullptr &&
+        desc->category == entry.category && desc->size == entry.size &&
+        std::strcmp(desc->name, entry.name) == 0) {
+      return desc;
+    }
+  }
+  return nullptr;
+}
+
+} // namespace
+
+Status ApexRegistry::canRebindComponent(
+    std::uint32_t fullUid, system_component::SystemComponentBase& replacement) const noexcept {
+  if (findComponentIndex(fullUid) == SIZE_MAX) {
+    return Status::ERROR_COMPONENT_NOT_FOUND;
+  }
+  for (const auto& d : data_) {
+    if (d.fullUid == fullUid && counterpartOf(d, replacement) == nullptr) {
+      return Status::ERROR_NOT_FOUND;
+    }
+  }
+  for (const auto& t : tasks_) {
+    if (t.fullUid == fullUid && replacement.taskByUid(t.taskUid) == nullptr) {
+      return Status::ERROR_NOT_FOUND;
+    }
+  }
+  return Status::SUCCESS;
+}
+
+Status ApexRegistry::rebindComponent(std::uint32_t fullUid,
+                                     system_component::SystemComponentBase& replacement) noexcept {
+  const Status CHECK = canRebindComponent(fullUid, replacement);
+  if (CHECK != Status::SUCCESS) {
+    return CHECK;
+  }
+
+  for (auto& d : data_) {
+    if (d.fullUid == fullUid) {
+      const auto* desc = counterpartOf(d, replacement);
+      d.dataPtr = desc->ptr;
+      d.name = desc->name;
+    }
+  }
+  for (auto& t : tasks_) {
+    if (t.fullUid == fullUid) {
+      t.task = replacement.taskByUid(t.taskUid);
+      t.name = t.task->getLabel().data();
+    }
+  }
+
+  ComponentEntry& entry = components_[findComponentIndex(fullUid)];
+  entry.name = replacement.componentName();
+  entry.type = replacement.componentType();
+  storeComponent(entry, &replacement);
+  return Status::SUCCESS;
 }
 
 /* ----------------------------- Data Queries ----------------------------- */

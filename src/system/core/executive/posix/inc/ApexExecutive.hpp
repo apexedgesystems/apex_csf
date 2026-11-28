@@ -143,6 +143,13 @@ public:
     return scheduler_.totalInFlightWaitTimeouts();
   }
 
+  /// Cycles on which the action phase and the delivery of queued commands
+  /// were held because a replacement RELOAD_LIBRARY had published was
+  /// still being told the bus is ready. Readable from any thread.
+  [[nodiscard]] std::size_t actionPhaseHolds() const noexcept {
+    return actionPhaseHolds_.load(std::memory_order_relaxed);
+  }
+
   /// Cycles on which the in-flight wait was a single poll because the
   /// task loop was behind the clock. Readable from any thread.
   /**
@@ -366,11 +373,14 @@ protected:
    * TPRM loading, initialization, and data descriptor registration.
    *
    * @param comp Pointer to component.
-   * @param logDir Directory for component log file (e.g., fileSystem().coreLogDir()).
+   * @param logDir Root of the log tree: fileSystem().logDir().
    * @return true on success, false on collision or error.
    * @note Called during registerComponents() phase.
    * @note Component must not be null.
-   * @note Log file created as "{componentName}_{instanceIndex}.log" in logDir.
+   * @note Log file created as "{componentName}_{instanceIndex}.log" in the
+   *       subdirectory of logDir for the component's type (core, models,
+   *       support, drivers). A log that cannot be opened is a warning,
+   *       not a refusal.
    */
   [[nodiscard]] bool registerComponent(system_core::system_component::SystemComponentBase* comp,
                                        const std::filesystem::path& logDir) noexcept;
@@ -644,8 +654,139 @@ private:
   // Registered components (for auto-configuration after interface init)
   std::vector<system_core::system_component::SystemComponentBase*> registeredComponents_{};
 
-  // Dynamically loaded component plugins (keyed by fullUid)
+  // Dynamically loaded component plugins (keyed by fullUid). Touched only
+  // by the RELOAD_LIBRARY handler, on the external I/O thread.
   std::unordered_map<std::uint32_t, system_core::system_component::PluginLoader> plugins_{};
+
+  /* ----------------------------- Library swap ----------------------------- */
+  //
+  // RELOAD_LIBRARY prepares the replacement on the external I/O thread,
+  // the control thread: a command that reaches the handler on the task
+  // thread (an action's command) is handed over to it first. The swap is
+  // published on the task thread, at a point where the scheduler reports
+  // every dispatched task settled: the task thread is the one that drains
+  // commands to components and dispatches, and the I/O thread is waiting,
+  // so nothing resolves the component while its bindings change. The
+  // plugin the swap replaced is destroyed afterwards on the I/O thread.
+
+  /// Outcome of publishing a swap.
+  struct LibrarySwapOutcome {
+    std::uint8_t status{0};        ///< SUCCESS, NOT_QUIESCENT, TASK_MISMATCH or REGISTRY_FAILED.
+    std::uint8_t tasksExpected{0}; ///< Scheduler entries of the component.
+    std::uint8_t tasksReplaced{0}; ///< Entries the replacement provided a task for.
+    std::uint64_t waitNs{0};       ///< From the request to the end of publication.
+  };
+
+  /// A swap waiting for the task thread.
+  struct LibrarySwap {
+    enum class Phase : std::uint8_t { NONE, PENDING, DONE };
+    Phase phase{Phase::NONE};
+    std::uint32_t fullUid{0};
+    system_core::system_component::SystemComponentBase* oldComp{nullptr};
+    system_core::system_component::SystemComponentBase* newComp{nullptr};
+    /// Set for a parameter reload, which goes through the same hand-over:
+    /// the directory oldComp loads from. There is then no replacement.
+    const std::filesystem::path* tprmDir{nullptr};
+    system_core::system_component::TprmIngest tprmIngest{
+        system_core::system_component::TprmIngest::NONE}; ///< What that load returned.
+    std::uint64_t tprmLoadNs{0};                          ///< How long that load held the thread.
+    LibrarySwapOutcome outcome{};
+  };
+
+  /// What a parameter reload handed to the task thread came to.
+  struct TprmApplyOutcome {
+    bool applied{false}; ///< False when the tasks did not settle within the wait.
+    system_core::system_component::TprmIngest ingest{
+        system_core::system_component::TprmIngest::NONE}; ///< The load's result when applied.
+    std::uint64_t waitNs{0};                              ///< From the request to its end.
+    std::uint64_t loadNs{0}; ///< How long the load held the task thread.
+  };
+
+  /**
+   * @brief Bind the scheduler's entries, the registry's entries and the
+   *        component list to the replacement.
+   * @return status NOT_QUIESCENT when the scheduler is not settled;
+   *         REGISTRY_FAILED when the replacement lacks a registered data
+   *         block or task; TASK_MISMATCH when it lacks a scheduled task
+   *         or sequences one differently. Nothing has changed in any of
+   *         those cases.
+   * @note Task thread only, with the external I/O thread waiting.
+   */
+  [[nodiscard]] LibrarySwapOutcome
+  publishLibrarySwapHere(std::uint32_t fullUid,
+                         system_core::system_component::SystemComponentBase& oldComp,
+                         system_core::system_component::SystemComponentBase& newComp) noexcept;
+
+  /**
+   * @brief Hand a swap to the task thread and wait for its outcome.
+   *
+   * The caller blocks until the swap is published, librarySwapWaitNs()
+   * passes or the task thread ends; a swap not taken by then is
+   * withdrawn and reported NOT_QUIESCENT.
+   * @note External I/O thread only: the task thread cannot wait for itself.
+   */
+  [[nodiscard]] LibrarySwapOutcome
+  publishLibrarySwap(std::uint32_t fullUid,
+                     system_core::system_component::SystemComponentBase& oldComp,
+                     system_core::system_component::SystemComponentBase& newComp) noexcept;
+
+  /**
+   * @brief Have the task thread load a component's parameters from DIR
+   *        between cycles, and wait for it.
+   *
+   * The load runs with every dispatched task settled and none dispatched
+   * meanwhile, so it cannot meet a run of the component's own tasks, the
+   * dispatch that reads the scheduler's tables, or the action phase. The
+   * caller blocks as for a library swap; a load not taken within
+   * librarySwapWaitNs() is withdrawn and reported not applied.
+   * @note External I/O thread only: the task thread cannot wait for itself.
+   */
+  [[nodiscard]] TprmApplyOutcome
+  applyTprmAtSettledPoint(system_core::system_component::SystemComponentBase& comp,
+                          const std::filesystem::path& dir) noexcept;
+
+  /// Hand REQUEST to the task thread and wait for it as publishLibrarySwap()
+  /// describes. @return true when the task thread carried it out; DONE is
+  /// then the request as the task thread left it.
+  [[nodiscard]] bool handOverToTaskThread(const LibrarySwap& request, LibrarySwap& done,
+                                          std::uint64_t& waitNs) noexcept;
+
+  /// Task thread: carry out the pending swap or parameter reload if the
+  /// scheduler is settled.
+  void serviceLibrarySwap() noexcept;
+
+  /// External I/O thread, top of its loop: destroy the plugins retired
+  /// since the last pass, then run the reload an action asked for.
+  void serviceLibraryControl() noexcept;
+
+  /// How long a swap from another thread waits for the task thread: two
+  /// seconds, or four clock periods when that is longer.
+  [[nodiscard]] std::uint64_t librarySwapWaitNs() const noexcept;
+
+  /// deferredReloadUid_ when no reload is waiting for the I/O thread.
+  static constexpr std::uint32_t NO_DEFERRED_RELOAD = 0xFFFFFFFFU;
+
+  std::mutex swapMutex_{};               ///< Guards swap_.
+  std::condition_variable cvSwapDone_{}; ///< Signalled when swap_ reaches DONE.
+  LibrarySwap swap_{};                   ///< The one swap in hand-over.
+  std::atomic<bool> swapPending_{false}; ///< swap_ is PENDING; the task thread reads it.
+  bool swapClosed_{false};               ///< The task thread has ended; guarded by swapMutex_.
+  std::atomic<bool> swapKick_{false};    ///< Wakes a waiting task thread for one attempt.
+  /// A replacement is published and its onBusReady() has not returned.
+  /// Set by the task thread where it publishes the swap, cleared by the
+  /// external I/O thread once the hook is back. While it is set the task
+  /// thread runs no action phase and delivers no queued command, so
+  /// neither reads nor commands the replacement beside its hook; the
+  /// clear is the release the next action phase's read acquires.
+  std::atomic<bool> replacementPreparing_{false};
+  std::atomic<std::size_t> actionPhaseHolds_{0}; ///< Cycles held for replacementPreparing_.
+  /// Target of a RELOAD_LIBRARY that arrived on the task thread and waits
+  /// for the external I/O thread to run it.
+  std::atomic<std::uint32_t> deferredReloadUid_{NO_DEFERRED_RELOAD};
+  /// Plugins a swap replaced, kept until the top of the external I/O
+  /// thread's next loop. Touched by that thread only.
+  std::vector<system_core::system_component::PluginLoader> retiredPlugins_{};
+  std::atomic<std::thread::id> taskThreadId_{}; ///< Set by the task thread when it starts.
 
   // Simulation configuration
   std::uint16_t clockFrequency_{DEFAULT_CLOCK_FREQUENCY};

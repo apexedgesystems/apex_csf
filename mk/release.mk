@@ -37,6 +37,7 @@
 #     APP_MyApp_rpi_BINARY             := MyApp
 #     APP_MyApp_stm32_TYPE             := firmware
 #     APP_MyApp_stm32_BINARY           := my_firmware
+#     APP_MyApp_stm32_BOARD            := nucleo_l476rg   (optional)
 #
 #   The deployable's executives and TPRM are declared in CMake next to the app
 #   (apex_add_deployment), not in this manifest.
@@ -47,6 +48,11 @@
 #
 #   TYPE=firmware: Bare-metal firmware with no shared library dependencies.
 #                  Copies .elf/.bin/.hex from the build firmware/ directory.
+#                  A firmware built for one board names it in BOARD and is
+#                  then built in that board's own directory,
+#                  <platform dir>-<board>. Without BOARD the platform's
+#                  shared directory is used, with whichever board it was
+#                  configured for.
 #
 # Adding a new platform:
 #   1. Add PLATFORM_<name>_SERVICE, _BUILD, _DIR entries below
@@ -100,6 +106,10 @@ $(foreach p,$(filter-out cpu cuda,$(PLAT_BUILDERS)),\
   $(eval PLATFORM_$(p)_SERVICE := $(P_$(p)_SERVICE))\
   $(eval PLATFORM_$(p)_BUILD   := $(P_$(p)_TARGET))\
   $(eval PLATFORM_$(p)_DIR     := build/$(P_$(p)_PRESET)))
+
+# The CMake variable a platform's toolchain reads its board from, for the
+# platforms whose firmware apps may name one.
+PLATFORM_stm32_BOARD_VAR := APEX_STM32_BOARD
 
 # ==============================================================================
 # App Manifests (auto-discovered from demos/*/release.mk and apps/*/release.mk)
@@ -186,12 +196,47 @@ _release-$(1)-$(2):
 	      "$(1)/$(2)" "$(APP_$(1)_$(2)_BINARY)" "$$(PLATFORM_$(2)_DIR)"; exit 1; }
 endef
 
+# ------------------------------------------------------------------------------
+# Firmware template for an app that names its board
+# $(1) = app name, $(2) = platform
+#
+# A platform's shared build directory keeps the board it was first
+# configured for, and the toolchain refuses another board there. An app
+# whose firmware exists for one board only would release from that
+# directory or fail to, according to what was built in it last. Its image
+# is therefore configured for its board in a directory of that board's own
+# and copied from there.
+# ------------------------------------------------------------------------------
+define _RELEASE_FIRMWARE_BOARD_template
+.PHONY: _release-$(1)-$(2)
+_release-$(1)-$(2):
+	$$(call _compose_run,release build $(2) for $(APP_$(1)_$(2)_BOARD),$(PLATFORM_$(2)_SERVICE),_release-firmware-tree,FW_PRESET=$(P_$(2)_PRESET) FW_DIR=$(PLATFORM_$(2)_DIR)-$(APP_$(1)_$(2)_BOARD) FW_BOARD_ARG=-D$(PLATFORM_$(2)_BOARD_VAR)=$(APP_$(1)_$(2)_BOARD))
+	@mkdir -p $(RELEASE_DIR)/$(1)/$(2)/firmware
+	@cp $(PLATFORM_$(2)_DIR)-$(APP_$(1)_$(2)_BOARD)/firmware/$(APP_$(1)_$(2)_BINARY).* \
+	  $(RELEASE_DIR)/$(1)/$(2)/firmware/ 2>/dev/null || \
+	  { printf '$(TERM_RED)[release]$(TERM_RESET) %s: no firmware image %s.* under %s/firmware\n' \
+	      "$(1)/$(2)" "$(APP_$(1)_$(2)_BINARY)" "$(PLATFORM_$(2)_DIR)-$(APP_$(1)_$(2)_BOARD)"; exit 1; }
+endef
+
+# In-container half of the template above: configure the platform's preset
+# for one board in that board's directory, and build it.
+.PHONY: _release-firmware-tree
+_release-firmware-tree: prep
+	@test -n "$(FW_PRESET)" && test -n "$(FW_DIR)" && test -n "$(FW_BOARD_ARG)" || \
+	  { printf '[release] _release-firmware-tree needs FW_PRESET, FW_DIR and FW_BOARD_ARG\n'; exit 1; }
+	$(call log,build,Configuring $(FW_PRESET) in $(FW_DIR))
+	@cmake --preset $(FW_PRESET) -B $(FW_DIR) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS) $(FW_BOARD_ARG)
+	$(call log,build,Building $(FW_DIR))
+	@cmake --build $(FW_DIR) -j$(NUM_JOBS)
+
 # Expand templates for all app/platform combinations
 $(foreach app,$(APP_REGISTRY),\
   $(foreach plat,$(APP_$(app)_PLATFORMS),\
     $(if $(filter posix,$(APP_$(app)_$(plat)_TYPE)),\
       $(eval $(call _RELEASE_POSIX_template,$(app),$(plat))),\
-      $(eval $(call _RELEASE_FIRMWARE_template,$(app),$(plat))))))
+      $(if $(APP_$(app)_$(plat)_BOARD),\
+        $(eval $(call _RELEASE_FIRMWARE_BOARD_template,$(app),$(plat))),\
+        $(eval $(call _RELEASE_FIRMWARE_template,$(app),$(plat)))))))
 
 # ==============================================================================
 # Release Targets

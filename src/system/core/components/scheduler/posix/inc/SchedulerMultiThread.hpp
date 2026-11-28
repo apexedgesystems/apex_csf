@@ -20,6 +20,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace system_core {
@@ -155,6 +156,22 @@ public:
     return totalInFlightWaitTimeouts_.load(std::memory_order_acquire);
   }
 
+  /**
+   * @brief Whether every dispatched invocation has left its worker.
+   *
+   * True when no entry is in flight and no worker is inside a task call
+   * or the record of its completion. Pending completion errors are then
+   * logged, as at the start of a dispatch. From a true return until the
+   * next dispatch no worker holds a task pointer or a task label this
+   * scheduler handed out, so a task object may be replaced or destroyed.
+   *
+   * @return false while any invocation is queued, running or completing.
+   * @note Call on the dispatching thread: it is the only source of new
+   *       invocations. One pass over the entries and one load per pool; it
+   *       does not wait. NOT RT-safe: logs when errors are pending.
+   */
+  [[nodiscard]] bool settled() noexcept;
+
   /** @brief Worker count per constructed pool (index = poolId). */
   [[nodiscard]] std::vector<std::uint16_t> poolWorkerCounts() const noexcept override;
 
@@ -206,6 +223,39 @@ public:
   /** @brief Dispatches dropped (context exhaustion or ring rejection) since startup. */
   [[nodiscard]] std::size_t totalDispatchDrops() const noexcept { return totalDispatchDrops_; }
 
+  using SchedulerBase::addTask;
+
+  /**
+   * @brief Add a task; once the pools exist, keep their contexts in step.
+   *
+   * The context pools are sized for the table's densest tick. A task
+   * added after init(), or a table loaded after it, can make a denser
+   * tick, so each addition sizes them again. Every other addTask()
+   * overload and loadTprm() add through this one.
+   *
+   * @note NOT RT-safe: may allocate.
+   */
+  [[nodiscard]] Status addTask(SchedulableTask& task, const TaskConfig& config) noexcept override;
+
+  /** @brief Contexts preallocated for a pool: its capacity when nothing is allocated on demand. */
+  [[nodiscard]] std::size_t ctxPoolReserved(std::size_t poolIdx) const noexcept {
+    return poolIdx < ctxPools_.size() ? ctxPools_[poolIdx]->reserved() : 0;
+  }
+
+  /**
+   * @brief Whether a dispatch that finds its context pool empty allocates.
+   *
+   * A release build drops such a dispatch and counts it; a debug build
+   * allocates a context so the shortfall shows in ctxPoolAllocatedCount().
+   * This sets either behavior in either build. Call after init(), which
+   * creates the pools and applies the build's default.
+   */
+  void setContextFallback(bool enable) noexcept {
+    for (auto& pool : ctxPools_) {
+      pool->setFallbackAlloc(enable);
+    }
+  }
+
   /**
    * @brief Contexts ever allocated by a pool (preallocation + any fallback).
    *
@@ -240,26 +290,67 @@ protected:
   /**
    * @brief Enqueue every entry on one slot in order.
    *
-   * One body, two instantiations: the gated one consults a multi-second
-   * task's cadence per visit; the other, used for every slot that holds
-   * no such task, is the plain loop with no per-visit test.
+   * One body, four instantiations. The gated ones consult a multi-second
+   * task's cadence per visit; the others, used for every slot that holds
+   * no such task, test nothing per visit. The sequenced ones, used for a
+   * slot that holds a sequenced task, hand a sequenced entry to its pool
+   * with its wait unset, keep the ones accepted, and place them through
+   * placeSequencedSlot() once the slot has been walked; an unsequenced
+   * entry is enqueued as in the others.
    */
-  template <bool kGated>
+  template <bool kGated, bool kSequenced>
   void dispatchSlot(const std::vector<std::size_t>& entryIndices, std::uint64_t cycle,
                     std::uint16_t tick, std::uint64_t dispatchNs, logs::SystemLog* lg,
                     int logLevel) noexcept;
+
+  /**
+   * @brief Give each sequenced entry accepted on this tick its place.
+   *
+   * An entry in slotDispatch_ waits for the accepted entries of its group
+   * whose phase is lower than its own, and a task alone in its group
+   * waits for nothing. An entry its pool refused is a counted drop and is
+   * not there: no task waits for it and the group's counter wraps without
+   * it. An entry of a group in ascending phase order on the slot has
+   * its count already; one of a group that is not costs a walk of its
+   * group.
+   */
+  void placeSequencedSlot() noexcept;
 
   /**
    * @brief Initialize the scheduler. Called by base init().
    */
   [[nodiscard]] std::uint8_t doInit() noexcept override;
 
-  void enqueueTask(TaskEntry* entry, std::uint16_t tick, std::uint64_t dispatchNs) noexcept;
+  /**
+   * @brief Hand one entry to its pool.
+   * @tparam kUnplaced Whether the entry is sequenced. Such a dispatch
+   *         goes out with its wait unset and returns its context, null
+   *         when the pool refused it, for placeSequencedSlot() to
+   *         place. Any other returns nothing and stores no more than an
+   *         unsequenced dispatch needs.
+   */
+  template <bool kUnplaced>
+  std::conditional_t<kUnplaced, TaskCtx*, void> enqueueTask(TaskEntry* entry, std::uint16_t tick,
+                                                            std::uint64_t dispatchNs) noexcept;
+
+  /**
+   * @brief Wait, on a worker, for the tick thread to place a sequenced dispatch.
+   * @return The counter value to wait for, or 0 when the scheduler is stopping.
+   */
+  [[nodiscard]] static int awaitPlacement(const TaskCtx& ctx) noexcept;
 
   static std::uint8_t taskTrampoline(void* raw) noexcept;
 
 private:
   void initPools(std::vector<PoolSpec> specs) noexcept;
+
+  /// Bring each pool's contexts up to the table's densest tick plus two
+  /// per worker. Does nothing before the pools exist.
+  void sizeContextPools() noexcept;
+
+  /// Log (at LOG_LEVEL's say) and discard the pools' pending completion
+  /// errors. @return whether there were any.
+  bool logCompletionErrors(logs::SystemLog* lg, int logLevel) noexcept;
 
   // Resolve PoolSpec.numThreads for each pending spec using the hierarchy:
   // caller-supplied non-zero > TPRM workersPerPool > hardware_concurrency().

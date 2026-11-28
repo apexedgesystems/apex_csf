@@ -100,6 +100,48 @@ public:
    */
   [[nodiscard]] Status freeze() noexcept override;
 
+  /* ----------------------------- Rebind (hot-swap) ----------------------------- */
+
+  /**
+   * @brief Whether a replacement instance can take over every entry the
+   *        registry holds for a component.
+   *
+   * It can when it provides a data block for each registered data entry
+   * (same category, same name, same size) and a task for each registered
+   * task entry (same taskUid).
+   *
+   * @param fullUid Component's full UID.
+   * @param replacement Instance that would take the entries over.
+   * @return SUCCESS, ERROR_COMPONENT_NOT_FOUND, or ERROR_NOT_FOUND when a
+   *         registered data block or task has no counterpart.
+   * @note NOT RT-safe: Control-plane only; string compares.
+   */
+  [[nodiscard]] Status
+  canRebindComponent(std::uint32_t fullUid,
+                     system_component::SystemComponentBase& replacement) const noexcept;
+
+  /**
+   * @brief Point every entry of a component at a replacement instance.
+   *
+   * The component entry (pointer, name, type), its data entries (block
+   * pointer and name) and its task entries (task pointer and name) are
+   * all the replacement's afterwards, so no lookup returns anything the
+   * replaced instance owns. Nothing changes unless canRebindComponent()
+   * holds. Data blocks the replacement has beyond the registered ones are
+   * not added: the registry is frozen.
+   *
+   * @param fullUid Component's full UID.
+   * @param replacement Instance to point the entries at.
+   * @return As canRebindComponent().
+   * @note NOT RT-safe: Control-plane only. The component pointer is
+   *       stored atomically; the data and task entries are plain, so the
+   *       caller runs this with no reader of them active. A pointer a
+   *       reader resolved earlier names the replaced instance: readers
+   *       resolve per use.
+   */
+  [[nodiscard]] Status rebindComponent(std::uint32_t fullUid,
+                                       system_component::SystemComponentBase& replacement) noexcept;
+
   /** @brief Check if registry is frozen. */
   [[nodiscard]] bool isFrozen() const noexcept override { return frozen_; }
 

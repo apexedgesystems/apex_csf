@@ -9,18 +9,22 @@
 #include "src/system/core/components/scheduler/posix/inc/SchedulerStatus.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerTlm.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/SchedulableComponentBase.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
+#include "src/utilities/helpers/inc/Cpu.hpp"
 
 #include <cstdint>
 #include <cstring>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <map>
 #include <set>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -29,9 +33,38 @@
 namespace system_core {
 namespace scheduler {
 
+/* ----------------------------- TableChange ----------------------------- */
+
+SchedulerBase::TableChange::TableChange(SchedulerBase& sched) noexcept : sched_(sched) {
+  if (sched_.tableChangeDepth_++ != 0U) {
+    return;
+  }
+  // Announce, then look (TableRead does the same from its side). A read
+  // in progress is a bounded walk of the table on another thread: spin
+  // for it, and past the spin sleep in short slices so a reader that
+  // shares this CPU gets it.
+  constexpr unsigned SPIN_LIMIT = 1024U;
+  sched_.tableChanging_.store(true, std::memory_order_seq_cst);
+  apex::helpers::cpu::ExponentialBackoff bk;
+  while (sched_.tableReaders_.load(std::memory_order_seq_cst) != 0U) {
+    if (bk.n < SPIN_LIMIT) {
+      bk.spinOnce();
+    } else {
+      std::this_thread::sleep_for(std::chrono::microseconds(20));
+    }
+  }
+}
+
+SchedulerBase::TableChange::~TableChange() {
+  if (--sched_.tableChangeDepth_ == 0U) {
+    sched_.tableChanging_.store(false, std::memory_order_release);
+  }
+}
+
 /* ----------------------------- addTask (TaskConfig) ----------------------------- */
 
 Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config) noexcept {
+  const TableChange CHANGE(*this);
   const std::uint16_t TFREQN = config.freqN;
   const std::uint16_t TFREQD = config.freqD;
   const std::uint16_t OFFSET = config.offset;
@@ -68,6 +101,7 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config) n
   if (schedule_.empty()) {
     schedule_.resize(static_cast<std::size_t>(ffreq_));
     slotHasGated_.assign(static_cast<std::size_t>(ffreq_), 0U);
+    slotHasSequenced_.assign(static_cast<std::size_t>(ffreq_), 0U);
   }
 
   // The cadence aligns to the cycle the next dispatch will carry, so a
@@ -163,6 +197,14 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config) n
     vec.insert(IT, ENTRY_IDX);
   }
 
+  // The dispatch scratch holds one slot's entries: keep it as large as
+  // the largest slot, here, so a dispatch never grows it.
+  for (const auto& slotEntries : schedule_) {
+    if (slotEntries.size() > slotDispatch_.capacity()) {
+      slotDispatch_.reserve(slotEntries.capacity());
+    }
+  }
+
   setLastError(nullptr);
   setStatus(static_cast<std::uint8_t>(Status::SUCCESS));
   return Status::SUCCESS;
@@ -182,6 +224,7 @@ Status SchedulerBase::addTask(SchedulableTask& task, std::uint16_t tfreqn, std::
 Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config, SequenceGroup* seq,
                               std::uint32_t fullUid, std::uint8_t taskUid,
                               const char* componentName) noexcept {
+  const TableChange CHANGE(*this);
   // Add task with base method first
   const Status RC = addTask(task, config);
   if (RC != Status::SUCCESS) {
@@ -196,7 +239,7 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config, S
   TaskEntry* entry = entries_.empty() ? nullptr : &entries_.back();
   if (entry != nullptr && entry->task == &task) {
     entry->fullUid = fullUid;
-    entry->componentName = componentName;
+    entry->componentName = internComponentName(componentName);
     entry->taskUid = taskUid;
 
     // If sequencing is provided, populate sequencing info
@@ -206,11 +249,48 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config, S
         entry->seqCounter = seq->counter();
         entry->seqPhase = info->phase;
         entry->seqMaxPhase = info->maxPhase;
+        markSequencedSlots();
       }
     }
   }
 
   return Status::SUCCESS;
+}
+
+/* ----------------------------- markSequencedSlots ----------------------------- */
+
+void SchedulerBase::markSequencedSlots() noexcept {
+  // Entries that share a counter are one group. The groups are few, so
+  // the counters seen so far are searched in order.
+  std::vector<const std::atomic<int>*> counters;
+  seqGroups_.clear();
+  for (std::size_t i = 0; i < entries_.size(); ++i) {
+    TaskEntry& entry = entries_[i];
+    if (!entry.isSequenced()) {
+      continue;
+    }
+    std::size_t group = 0;
+    while (group < counters.size() && counters[group] != entry.seqCounter) {
+      ++group;
+    }
+    if (group == counters.size()) {
+      counters.push_back(entry.seqCounter);
+      seqGroups_.emplace_back();
+    }
+    entry.seqGroup = static_cast<std::uint16_t>(group);
+    seqGroups_[group].entries.push_back(i);
+  }
+
+  for (std::size_t slot = 0; slot < schedule_.size() && slot < slotHasSequenced_.size(); ++slot) {
+    std::uint8_t any = 0U;
+    for (const std::size_t IDX : schedule_[slot]) {
+      if (entries_[IDX].isSequenced()) {
+        any = 1U;
+        break;
+      }
+    }
+    slotHasSequenced_[slot] = any;
+  }
 }
 
 /* ----------------------------- getEntry ----------------------------- */
@@ -235,10 +315,37 @@ const TaskEntry* SchedulerBase::getEntry(const SchedulableTask& task) const noex
 
 /* ----------------------------- replaceComponentTasks ----------------------------- */
 
+const char* SchedulerBase::internComponentName(const char* name) noexcept {
+  if (name == nullptr) {
+    return nullptr;
+  }
+  for (const auto& kept : componentNames_) {
+    if (kept == name) {
+      return kept.c_str();
+    }
+  }
+  componentNames_.emplace_back(name);
+  return componentNames_.back().c_str();
+}
+
 std::uint8_t
 SchedulerBase::replaceComponentTasks(std::uint32_t fullUid,
                                      system_component::SystemComponentBase& newComponent) noexcept {
-  std::uint8_t replaced = 0;
+  // Resolve every entry's binding first; the entries change only if all resolve.
+  struct Binding {
+    TaskEntry* entry;
+    SchedulableTask* task;
+    std::atomic<int>* seqCounter;
+  };
+  std::vector<Binding> bindings;
+
+  // Entries that share a counter are one sequence: they must share one
+  // counter afterwards too, and two sequences must not be merged into one.
+  struct CounterPair {
+    const std::atomic<int>* oldCounter;
+    const std::atomic<int>* newCounter;
+  };
+  std::vector<CounterPair> counters;
 
   for (auto& entry : entries_) {
     if (entry.fullUid != fullUid) {
@@ -247,15 +354,50 @@ SchedulerBase::replaceComponentTasks(std::uint32_t fullUid,
 
     auto* newTask = newComponent.taskByUid(entry.taskUid);
     if (newTask == nullptr) {
-      // New component doesn't have this task -- leave it as-is (will be skipped if locked).
-      continue;
+      return 0;
     }
 
-    entry.task = newTask;
-    ++replaced;
+    // A sequenced entry keeps its phase numbers, so the replacement must
+    // sequence this task the same way in one of its groups.
+    std::atomic<int>* seqCounter = nullptr;
+    if (entry.isSequenced()) {
+      for (std::size_t idx = 0; idx < system_component::MAX_GROUPS_PER_COMPONENT; ++idx) {
+        auto* group = newComponent.sequenceGroup(static_cast<std::uint8_t>(idx));
+        const SeqInfo* info = (group != nullptr) ? group->getSeqInfo(newTask) : nullptr;
+        if (info != nullptr && info->phase == entry.seqPhase &&
+            info->maxPhase == entry.seqMaxPhase) {
+          seqCounter = group->counter();
+          break;
+        }
+      }
+      if (seqCounter == nullptr) {
+        return 0;
+      }
+      bool known = false;
+      for (const CounterPair& pair : counters) {
+        if (pair.oldCounter == entry.seqCounter || pair.newCounter == seqCounter) {
+          if (pair.oldCounter != entry.seqCounter || pair.newCounter != seqCounter) {
+            return 0; // one old sequence split in two, or two merged into one
+          }
+          known = true;
+        }
+      }
+      if (!known) {
+        counters.push_back({entry.seqCounter, seqCounter});
+      }
+    }
+
+    bindings.push_back({&entry, newTask, seqCounter});
   }
 
-  return replaced;
+  const char* newName = internComponentName(newComponent.componentName());
+  const TableChange CHANGE(*this);
+  for (const Binding& binding : bindings) {
+    binding.entry->task = binding.task;
+    binding.entry->seqCounter = binding.seqCounter;
+    binding.entry->componentName = newName;
+  }
+  return static_cast<std::uint8_t>(bindings.size());
 }
 
 /* ----------------------------- populateRequirementsTlm ----------------------------- */
@@ -390,6 +532,10 @@ bool SchedulerBase::runTaskCensus(std::uint8_t repeats) noexcept {
 /* ----------------------------- inFlightSummary ----------------------------- */
 
 std::string SchedulerBase::inFlightSummary(std::size_t cap) const noexcept {
+  const TableRead READ(*this);
+  if (!READ) {
+    return TABLE_CHANGING_TEXT;
+  }
   std::string out;
   std::size_t listed = 0;
   for (const auto& entry : entries_) {
@@ -469,9 +615,18 @@ void SchedulerBase::logTablePreflight() noexcept {
   log->info(label(), fmt::format("[{}] chain dispatch order: {} group(s) with a later phase "
                                  "dispatched ahead of an earlier one",
                                  NAME(P.chainOrder), P.chainOrderViolations));
-  log->info(label(), fmt::format("[{}] chain shape: {} group(s) with waiters >= workers, "
-                                 "{} group(s) mixing rates/offsets",
+  log->info(label(), fmt::format("[{}] chain shape: {} group(s) with waiters >= workers on a "
+                                 "tick ({} group(s) mix rates/offsets)",
                                  NAME(P.chainShape), P.chainsOverWorkers, P.mixedRateChains));
+  log->info(label(), fmt::format("[{}] sequence references: {} task(s) the table sequences "
+                                 "and their component does not",
+                                 NAME(P.seqRefs), P.unsequencedTasks));
+  if (P.boundedSlots > 0) {
+    log->info(label(), fmt::format("{} slot(s) hold tasks paced over several seconds whose "
+                                   "common period is past the analysis budget: taken with "
+                                   "every task due, an upper bound",
+                                   P.boundedSlots));
+  }
   const char* OVERALL = NAME(P.overall());
   if (P.overall() == PreflightVerdict::FAIL) {
     log->error(label(), 0,
@@ -638,9 +793,12 @@ void SchedulerBase::logScheduleLayout(std::string_view modeDescription) noexcept
   componentLog()->info(label(), "========================================");
   componentLog()->info(label(), "");
 
-  // Detect potential intra-component data races:
-  // Multiple tasks from same fullUid on same tick without shared sequencing.
+  // Detect potential intra-component data races: multiple tasks from the
+  // same fullUid on the same tick, able to run at the same time, without
+  // shared sequencing. A pool with one worker runs its tasks one after
+  // another, so tasks that all sit on one such pool cannot overlap.
   std::size_t contentionWarnings = 0;
+  const std::vector<std::uint16_t> POOL_WORKERS = poolWorkerCounts();
 
   for (std::size_t tick = 0; tick < schedule_.size(); ++tick) {
     const auto& indices = schedule_[tick];
@@ -660,6 +818,15 @@ void SchedulerBase::logScheduleLayout(std::string_view modeDescription) noexcept
     // Check each component with multiple concurrent tasks
     for (const auto& [uid, taskIndices] : byComponent) {
       if (taskIndices.size() < 2) {
+        continue;
+      }
+
+      const std::uint8_t FIRST_POOL = entries_[taskIndices.front()].config.poolId;
+      bool onePool = true;
+      for (std::size_t idx : taskIndices) {
+        onePool = onePool && entries_[idx].config.poolId == FIRST_POOL;
+      }
+      if (onePool && FIRST_POOL < POOL_WORKERS.size() && POOL_WORKERS[FIRST_POOL] == 1U) {
         continue;
       }
 
@@ -719,12 +886,15 @@ void SchedulerBase::logScheduleLayout(std::string_view modeDescription) noexcept
 /* ----------------------------- clearTasks ----------------------------- */
 
 void SchedulerBase::clearTasks() noexcept {
+  const TableChange CHANGE(*this);
   entries_.clear();
   cadences_.clear();
   for (auto& tick : schedule_) {
     tick.clear();
   }
   std::fill(slotHasGated_.begin(), slotHasGated_.end(), static_cast<std::uint8_t>(0U));
+  std::fill(slotHasSequenced_.begin(), slotHasSequenced_.end(), static_cast<std::uint8_t>(0U));
+  seqGroups_.clear();
 }
 
 /* ----------------------------- loadTprm ----------------------------- */
@@ -783,16 +953,25 @@ SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     return TprmIngest::REJECTED;
   }
 
+  // The change is held from before the entries move until after the
+  // backup below is destroyed, on every way out: a reader that began
+  // before it is waited for, and none begins until the table is whole.
+  const TableChange CHANGE(*this);
+
   // Backup current schedule for restoration on failure.
   // This prevents leaving the scheduler empty if parsing fails.
   auto backupEntries = std::move(entries_);
   auto backupCadences = std::move(cadences_);
   auto backupSchedule = std::move(schedule_);
   auto backupSlotHasGated = std::move(slotHasGated_);
+  auto backupSlotHasSequenced = std::move(slotHasSequenced_);
+  auto backupSeqGroups = std::move(seqGroups_);
   entries_.clear();
   cadences_.clear();
   schedule_.clear();
   slotHasGated_.clear();
+  slotHasSequenced_.clear();
+  seqGroups_.clear();
 
   const std::uint8_t* taskEntryBytes = tprmData.data() + sizeof(SchedulerTprmHeader);
 
@@ -851,8 +1030,9 @@ SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     }
 
     // Get sequence group if sequenced
+    const bool WANTS_SEQUENCE = !isUnsequenced(entry.sequenceGroup);
     SequenceGroup* seqGroup = nullptr;
-    if (!isUnsequenced(entry.sequenceGroup)) {
+    if (WANTS_SEQUENCE) {
       seqGroup = component->sequenceGroup(entry.sequenceGroup);
     }
 
@@ -866,6 +1046,22 @@ SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
             label(), 0,
             fmt::format("TPRM task {}: addTask failed (rc={}), skipped", i, static_cast<int>(RC)));
       }
+      continue;
+    }
+
+    // Sequencing is the component's to offer: a row can only opt a task
+    // into a group the component created and registered that task in. A
+    // row asking for anything else runs the task unsequenced. The request
+    // is kept on the entry for the preflight, which reports it once the
+    // log exists; a table loaded at startup precedes the log.
+    entries_.back().seqRequested = WANTS_SEQUENCE;
+    if (WANTS_SEQUENCE && !entries_.back().isSequenced()) {
+      if (auto* log = componentLog()) {
+        log->warning(label(), 0,
+                     fmt::format("TPRM task {}: component 0x{:06X} does not sequence task {} in "
+                                 "group {}; running it unsequenced",
+                                 i, entry.fullUid, entry.taskUid, entry.sequenceGroup));
+      }
     }
   }
 
@@ -875,6 +1071,8 @@ SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     cadences_ = std::move(backupCadences);
     schedule_ = std::move(backupSchedule);
     slotHasGated_ = std::move(backupSlotHasGated);
+    slotHasSequenced_ = std::move(backupSlotHasSequenced);
+    seqGroups_ = std::move(backupSeqGroups);
     setLastError("TPRM reload failed: 0 tasks resolved, keeping previous schedule");
     if (auto* log = componentLog()) {
       log->warning(label(), 0,
