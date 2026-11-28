@@ -118,7 +118,8 @@ any such change is called out explicitly in its entry.
   the scheduler (layouts changed); the plugin ABI version is 2, so
   plugins built earlier are refused at load;
   `RegistryBase::updateComponent()` is replaced by
-  `ApexRegistry::rebindComponent()`.
+  `ApexRegistry::rebindComponent()`; the scheduler's preflight record
+  grows from 16 to 20 bytes.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - Breaking: `initComponentLog()` returns whether the log opened, and
   `ParamBank::apply()` needs a `load()` accepted since the last publish.
@@ -225,59 +226,43 @@ any such change is called out explicitly in its entry.
   types included, and `SPSCQueue::sizeApprox()` never exceeds `capacity()`
   when read from a third thread.
   ([#189](https://github.com/apexedgesystems/apex_csf/pull/189))
-- Plugin loader error text is no longer read after it is freed, and a
-  component swapped in by `RELOAD_LIBRARY` gets its log.
+- `RELOAD_LIBRARY` publishes between cycles once every task has settled,
+  rebinds the component's data and tasks or refuses whole, gives the
+  replacement its log and the internal bus, and holds actions and queued
+  commands until it has been told the bus is ready; a hardware model's
+  reload is refused with `NOT_SWAPPABLE`.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
-- `RELOAD_LIBRARY` swaps on the task thread once every dispatched task
-  has settled, rebinds the component's data and sequenced tasks or
-  refuses whole, and always prepares on the I/O thread.
+- `RELOAD_TPRM` loads between cycles once every task has settled, or
+  answers `NOT_QUIESCENT`; spec-generated components keep their running
+  parameters when a reload is refused.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
-- Component bases: logs open outside a pre-made log tree, the registry
-  refuses a 257th instance, `reset()` empties task tables, and a second
+- Component bases: loader error text is not read after it is freed, logs
+  open outside a pre-made log tree, the registry refuses a 257th
+  instance, `reset()` empties task tables, and a second
   `provisionTransport()` keeps the open link.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
-- `apex_ops` client: a response frame that arrives in the same read as
-  another is no longer discarded, so a queued command's completion is
-  not lost when it lands with its acceptance.
-  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
-- A PING reply no longer copies its payload over itself: the echo is
-  assembled with an overlap-safe copy.
-  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
-- `make release APP=ApexHilDemo` builds its STM32 firmware for the board
-  its manifest names, in that board's own build directory; it failed
-  when the shared STM32 directory was configured for another board.
-  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
-- `RELOAD_TPRM` loads on the task thread between cycles, once every
-  dispatched task has settled, and answers `NOT_QUIESCENT` when they do
-  not; it loaded on the calling thread while tasks ran.
-  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - Shutdown waits for a task that is still running before the scheduler
-  stops; past the five-second drain stage it had let components be
-  destroyed under the task.
-  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
-- `RELOAD_EXECUTIVE` during a pause restarts also when the task thread
-  was parked in the pause; it could be left waiting for a resume.
-  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
-- Spec-generated component bases keep the running parameters when a
-  reload brings a set the component refuses; they applied the defaults
-  in its place.
-  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
-- A component swapped in by `RELOAD_LIBRARY` is attached to the internal
-  bus and told so before its tasks run; a reload of a hardware model is
-  refused with `NOT_SWAPPABLE` instead of cutting its driver off.
-  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
-- The scheduler preflight fails a table that sequences a task its
-  component does not (the task ran unsequenced, unreported); the
-  preflight record grows from 16 to 18 bytes. The contention check
-  no longer flags tasks sharing a one-worker pool.
+  stops, so a task that never returns keeps it waiting; a
+  `RELOAD_EXECUTIVE` during a pause reaches a parked task thread.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - A sequence group orders its tasks among those dispatched on the same
-  tick, so tasks at different rates are ordered where they meet; a
-  slower task at a later phase could run beside the step it follows.
+  tick, so tasks at different rates are ordered where they meet; a task
+  its pool refuses takes no part, and a group still running from an
+  earlier tick is skipped until it has finished. The ops and HIL demos'
+  components sequence their own tasks.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
-- The ops and HIL demos' components put their own tasks in a sequence
-  group and the tables opt them in, on two workers; a component's tasks
-  could run beside one another on the tick they share.
+- Scheduler preflight: fails a table that sequences a task its component
+  does not, counts hazards only on cycles the tasks share, and stops its
+  counts at 255 without clearing a verdict. The contention check ignores
+  tasks on a one-worker pool, the context pools follow a table that
+  grows, and the frame-loss line reads the task table safely during a
+  reload.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
+- `apex_ops` keeps a response frame that arrives in the same read as
+  another, and a PING reply's echo is assembled with an overlap-safe copy.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
+- `make release APP=ApexHilDemo` builds its STM32 firmware for the board
+  its manifest names, in that board's own build directory.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - Concurrency primitives: pool start-up, shutdown and signal handling,
   Barrier and Latch semantics, LockFreeQueue cell alignment and
