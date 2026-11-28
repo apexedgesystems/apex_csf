@@ -50,6 +50,9 @@ enum class RKNStatus : uint8_t {
  *   y_{n+1} = y_n + h*y'_n + h^2*(k1 + k2 + k3)/6
  *   y'_{n+1} = y'_n + h*(k1 + 2*k2 + 2*k3 + k4)/6
  *
+ * The third stage's position uses k1: with k2 there the rule is third
+ * order.
+ *
  * @tparam State State type for position and velocity.
  *
  * Example:
@@ -158,10 +161,12 @@ private:
  *   y+  = y + dt*v + dt^2 * sum_i (b.A)_i * k_i
  *   v+  = v + dt * sum_i b_i * k_i
  *
- * Nodes c = (0, 1/3, 2/3, 1/3, 5/6, 1/6, 1); weights
- * b = (13/200, 0, 11/40, 11/40, 4/25, 4/25, 13/200). The coefficients
- * satisfy all 37 order conditions of a sixth-order Runge-Kutta method
- * exactly (one condition per rooted tree of up to six nodes).
+ * Nodes c = (0, 1/2, 2/3, 1/3, 5/6, 1/6, 1), weights
+ * b = (13/200, 0, 11/40, 11/40, 4/25, 4/25, 13/200): every node lies inside
+ * the step and no weight is negative. The velocity coefficients below are
+ * the array A; the position coefficients are its products A.A and b.A. The
+ * array satisfies all 37 order conditions of a sixth-order method (one per
+ * rooted tree of up to six nodes).
  *
  * @tparam State State type.
  *
@@ -193,7 +198,7 @@ public:
     const double DT_SQ = dt * dt;
 
     // Nodes
-    constexpr double C2 = 1.0 / 3.0;
+    constexpr double C2 = 1.0 / 2.0;
     constexpr double C3 = 2.0 / 3.0;
     constexpr double C4 = 1.0 / 3.0;
     constexpr double C5 = 5.0 / 6.0;
@@ -203,34 +208,35 @@ public:
     const State k1 = accel(t_, y, v);
 
     // Stage 2. Its position has no acceleration term: A.A is zero in this row.
-    constexpr double B21 = 1.0 / 3.0;
+    constexpr double B21 = 1.0 / 2.0;
     const State y2 = y + v * (C2 * dt);
     const State v2 = v + k1 * (B21 * dt);
     const State k2 = accel(t_ + C2 * dt, y2, v2);
 
     // Stage 3
     constexpr double A31 = 2.0 / 9.0;
-    constexpr double B32 = 2.0 / 3.0;
+    constexpr double B31 = 2.0 / 9.0;
+    constexpr double B32 = 4.0 / 9.0;
     const State y3 = y + v * (C3 * dt) + k1 * (A31 * DT_SQ);
-    const State v3 = v + k2 * (B32 * dt);
+    const State v3 = v + (k1 * B31 + k2 * B32) * dt;
     const State k3 = accel(t_ + C3 * dt, y3, v3);
 
     // Stage 4
-    constexpr double A41 = 1.0 / 9.0;
-    constexpr double A42 = -1.0 / 18.0;
-    constexpr double B41 = 1.0 / 12.0;
-    constexpr double B42 = 1.0 / 3.0;
+    constexpr double A41 = 5.0 / 54.0;
+    constexpr double A42 = -1.0 / 27.0;
+    constexpr double B41 = 7.0 / 36.0;
+    constexpr double B42 = 2.0 / 9.0;
     constexpr double B43 = -1.0 / 12.0;
     const State y4 = y + v * (C4 * dt) + (k1 * A41 + k2 * A42) * DT_SQ;
     const State v4 = v + (k1 * B41 + k2 * B42 + k3 * B43) * dt;
     const State k4 = accel(t_ + C4 * dt, y4, v4);
 
     // Stage 5
-    constexpr double A51 = -175.0 / 288.0;
-    constexpr double A52 = 10.0 / 9.0;
+    constexpr double A51 = -205.0 / 864.0;
+    constexpr double A52 = 20.0 / 27.0;
     constexpr double A53 = -5.0 / 32.0;
-    constexpr double B51 = 25.0 / 48.0;
-    constexpr double B52 = -55.0 / 24.0;
+    constexpr double B51 = -35.0 / 144.0;
+    constexpr double B52 = -55.0 / 36.0;
     constexpr double B53 = 35.0 / 48.0;
     constexpr double B54 = 15.0 / 8.0;
     const State y5 = y + v * (C5 * dt) + (k1 * A51 + k2 * A52 + k3 * A53) * DT_SQ;
@@ -238,12 +244,12 @@ public:
     const State k5 = accel(t_ + C5 * dt, y5, v5);
 
     // Stage 6
-    constexpr double A61 = -17.0 / 288.0;
-    constexpr double A62 = -7.0 / 48.0;
+    constexpr double A61 = -31.0 / 288.0;
+    constexpr double A62 = -7.0 / 72.0;
     constexpr double A63 = 1.0 / 32.0;
     constexpr double A64 = 3.0 / 16.0;
-    constexpr double B61 = 3.0 / 20.0;
-    constexpr double B62 = -11.0 / 24.0;
+    constexpr double B61 = -1.0 / 360.0;
+    constexpr double B62 = -11.0 / 36.0;
     constexpr double B63 = -1.0 / 8.0;
     constexpr double B64 = 1.0 / 2.0;
     constexpr double B65 = 1.0 / 10.0;
@@ -252,13 +258,13 @@ public:
     const State k6 = accel(t_ + C6 * dt, y6, v6);
 
     // Stage 7, at the end of the step
-    constexpr double A71 = 77.0 / 78.0;
-    constexpr double A72 = -167.0 / 78.0;
+    constexpr double A71 = 32.0 / 117.0;
+    constexpr double A72 = -167.0 / 117.0;
     constexpr double A73 = 3.0 / 26.0;
     constexpr double A74 = 4.0 / 3.0;
     constexpr double A75 = 8.0 / 39.0;
-    constexpr double B71 = -261.0 / 260.0;
-    constexpr double B72 = 33.0 / 13.0;
+    constexpr double B71 = -41.0 / 260.0;
+    constexpr double B72 = 22.0 / 13.0;
     constexpr double B73 = 43.0 / 156.0;
     constexpr double B74 = -118.0 / 39.0;
     constexpr double B75 = 32.0 / 195.0;

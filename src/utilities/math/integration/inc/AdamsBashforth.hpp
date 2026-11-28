@@ -27,6 +27,9 @@ namespace integration {
  *   x_{n+1} = x_n + dt * sum_{i=0}^{k-1} b_i * f_{n-i},
  *   where k = opts.order (1..4).
  *
+ * The b_i are those for which the formula is exact for polynomials of
+ * degree k.
+ *
  * One derivative evaluation per step once k derivatives are held. The first
  * k-1 steps are classical Runge-Kutta steps (four evaluations each), which
  * build that history accurately enough for the method to converge at order k.

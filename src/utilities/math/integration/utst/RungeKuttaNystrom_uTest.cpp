@@ -20,6 +20,7 @@
 #include <cstdint>
 
 #include <algorithm>
+#include <array>
 #include <limits>
 
 using apex::math::integration::RKN34;
@@ -109,6 +110,45 @@ TEST(RKN6Test, ConstantAccelerationIsExact) {
   EXPECT_NEAR(y, 0.5, 1e-14);
   EXPECT_NEAR(v, 1.0, 1e-14);
   EXPECT_DOUBLE_EQ(integrator.time(), 1.0);
+}
+
+/** @test Reproduces the same array applied as a plain Runge-Kutta method to y' = v, v' = f */
+TEST(RKN6Test, StepsMatchReference) {
+  // Three steps of 0.1. Expected values: the array of the class text applied
+  // directly to the first-order system, computed outside the library.
+  struct Expected {
+    double y;
+    double v;
+  };
+
+  {
+    const std::array<Expected, 3> expected = {{{0.9950041652777778, -0.09983341671296297},
+                                               {0.9800665778275433, -0.19866933092662056},
+                                               {0.9553364890854601, -0.2955202068556414}}};
+    RKN6<double> integrator;
+    double y = 1.0;
+    double v = 0.0;
+    for (const Expected& e : expected) {
+      integrator.step(y, v, 0.1, [](double, const double& pos, const double&) { return -pos; });
+      EXPECT_NEAR(y, e.y, 1e-14);
+      EXPECT_NEAR(v, e.v, 1e-14);
+    }
+  }
+  {
+    const std::array<Expected, 3> expected = {{{1.1049868306252537, 1.0994664998143535},
+                                               {1.219778556831378, 1.195464198054259},
+                                               {1.3438252454045552, 1.283805296194998}}};
+    RKN6<double> integrator;
+    double y = 1.0;
+    double v = 1.0;
+    for (const Expected& e : expected) {
+      integrator.step(y, v, 0.1, [](double t, const double& pos, const double& vel) {
+        return vel * vel / pos - std::sin(t) * pos;
+      });
+      EXPECT_NEAR(y, e.y, 1e-14);
+      EXPECT_NEAR(v, e.v, 1e-14);
+    }
+  }
 }
 
 /** @test Converges at sixth order on the harmonic oscillator, in position and velocity */

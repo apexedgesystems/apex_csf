@@ -17,6 +17,8 @@
 #include <cmath>
 #include <cstdint>
 
+#include <array>
+
 using apex::math::integration::ROS2;
 using apex::math::integration::ROS3;
 using apex::math::integration::RosenbrockOptions;
@@ -197,6 +199,56 @@ TEST(ROS3Test, SingleStepOfDecay) {
   // The local error of a third-order method is O(dt^4): 1e-8 at dt = 0.01
   EXPECT_NEAR(y, std::exp(-0.01), 1e-8);
   EXPECT_DOUBLE_EQ(integrator.time(), 0.01);
+}
+
+/** @test Reproduces the method in its defining form, which applies the Jacobian to the stages */
+TEST(ROS3Test, StepsMatchReference) {
+  // Three steps of 0.1. Expected values: the method in its defining form
+  // (with the Jacobian applied to the earlier stages), computed outside the
+  // library in 60-digit arithmetic from the defining coefficients.
+  {
+    const std::array<double, 3> expected = {0.9048352044724651, 0.8187267472527278,
+                                            0.7408127837574982};
+    ROS3<double> integrator;
+    const auto opts = decayOptions(-1.0);
+    integrator.initialize([](const double& y, double) { return -y; }, 1.0, 0.0);
+    double y = 1.0;
+    for (const double e : expected) {
+      integrator.step(y, 0.1, opts);
+      EXPECT_NEAR(y, e, 1e-15);
+    }
+  }
+  {
+    // y' = y*(1 - y); df/dy = 1 - 2y
+    const std::array<double, 3> expected = {0.10936670223429024, 0.11949427660195494,
+                                            0.13042235942280425};
+    ROS3<double> integrator;
+    RosenbrockOptions<double> opts;
+    opts.computeMatrix = [](const double& x, double, double gammaDt) {
+      return 1.0 - gammaDt * (1.0 - 2.0 * x);
+    };
+    opts.linearSolve = [](const double& matrix, const double& rhs) { return rhs / matrix; };
+    integrator.initialize([](const double& y, double) { return y * (1.0 - y); }, 0.1, 0.0);
+    double y = 0.1;
+    for (const double e : expected) {
+      integrator.step(y, 0.1, opts);
+      EXPECT_NEAR(y, e, 1e-15);
+    }
+  }
+  {
+    // y' = -y + t^2 from t = 0.5, with df/dt = 2t
+    const std::array<double, 3> expected = {0.9337867079214932, 0.8853097586473643,
+                                            0.8547845726517791};
+    ROS3<double> integrator;
+    auto opts = decayOptions(-1.0);
+    opts.timeDerivative = [](const double&, double t) { return 2.0 * t; };
+    integrator.initialize([](const double& y, double t) { return -y + t * t; }, 1.0, 0.5);
+    double y = 1.0;
+    for (const double e : expected) {
+      integrator.step(y, 0.1, opts);
+      EXPECT_NEAR(y, e, 1e-15);
+    }
+  }
 }
 
 /** @test Converges at third order on a linear problem */

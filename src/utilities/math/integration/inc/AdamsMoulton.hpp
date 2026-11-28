@@ -26,7 +26,8 @@ namespace integration {
  * Corrector: solve
  *   x_{n+1} = x_n + (dt/12)[5 f(x_{n+1},t_{n+1}) + 8 f_n - f_{n-1}]
  *
- * Third order. x_n is the state passed to step() and f_n the derivative
+ * The Adams-Moulton method of order 3: the corrector is exact for
+ * polynomials of degree 3. x_n is the state passed to step() and f_n the derivative
  * there; f_{n-1} is the derivative at the state passed to the step before.
  * The first step after initialize has no f_{n-1}: it is one classical
  * Runge-Kutta step, explicit, which makes no solve and does not call the

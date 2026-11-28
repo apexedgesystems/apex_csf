@@ -24,6 +24,8 @@ namespace integration {
  *
  *   x_{n+1} = (4/3)*x_n - (1/3)*x_{n-1} + (2/3)*dt*f(x_{n+1}, t_{n+1})
  *
+ * the backward differentiation formula of order 2.
+ *
  * Requires solving a nonlinear equation each step. x_n is the state passed
  * to step(); x_{n-1} is the state passed to the step before it. The first
  * step after initialize has no x_{n-1} and uses the one-step rule

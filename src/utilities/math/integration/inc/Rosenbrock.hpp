@@ -79,7 +79,10 @@ template <typename State> struct RosenbrockOptions {
 /**
  * @brief ROS2: Second-order L-stable Rosenbrock method.
  *
- * Two-stage method with only one matrix factorization per step.
+ * Two-stage method with only one matrix factorization per step, with
+ * gamma = 1 + 1/sqrt(2). Without the f_t terms the method is still second
+ * order on a time-dependent problem that is not stiff; the f_t terms are
+ * the method applied to the system extended by t' = 1.
  *
  * Algorithm, with f_t = df/dt at (y_n, t_n) when opts.timeDerivative is set:
  *   (I - gamma*dt*J) * k1 = f(y_n, t_n)               + gamma*dt*f_t
@@ -187,9 +190,9 @@ private:
  * @brief ROS3: Third-order L-stable Rosenbrock method.
  *
  * Three stages, one matrix factorization and two derivative evaluations per
- * step (the third stage is evaluated at the second stage's point). This is
- * the method named ROS3 by Sandu, Verwer, Blom, Spee, Carmichael and Potra
- * (1997).
+ * step (the third stage is evaluated at the second stage's point). The
+ * method is defined by gamma, gamma_21, gamma_32 and the weights b_1..b_3,
+ * with alpha_21 = alpha_31 = gamma and alpha_32 = gamma_31 = 0.
  *
  * Algorithm, with W = I - gamma*dt*J, f_t = df/dt at (y_n, t_n) when
  * opts.timeDerivative is set, and each k_i in the units of f:
@@ -200,9 +203,11 @@ private:
  *
  * This is the form that needs no product of the Jacobian with a vector,
  * only solves with W, which is all the options provide. Its coefficients
- * follow from the method's defining ones (gamma_ij, alpha_ij, b_i) by
+ * follow from the defining ones (gamma_ij, alpha_ij, b_i) by
  * C = -gamma*offdiag(G^-1), A = gamma*alpha*G^-1, M = gamma*b*G^-1, with G
  * the lower-triangular matrix of gamma_ij; D_i is the i-th row sum of G.
+ * The constants below are those expressions evaluated in extended
+ * precision.
  *
  * Third order needs opts.timeDerivative when f depends on time. On a stiff
  * problem at a step far above its fastest time constant the observed order
@@ -225,14 +230,14 @@ public:
   static constexpr double GAMMA = 0.435866521508458999416;
   static constexpr double A21 = GAMMA;
   static constexpr double C21 = -0.442673496217456978751;
-  static constexpr double C31 = 1.776590043580387551791;
-  static constexpr double C32 = 4.013319204246335278389;
+  static constexpr double C31 = 1.776590043580387551808;
+  static constexpr double C32 = 4.013319204246335278426;
   static constexpr double M1 = GAMMA;
-  static constexpr double M2 = 2.689206956220652834790;
-  static constexpr double M3 = -0.186429946765601044632;
+  static constexpr double M2 = 2.689206956220652834789;
+  static constexpr double M3 = -0.186429946765601044630;
   static constexpr double D1 = GAMMA;
   static constexpr double D2 = 0.242919964548168043666;
-  static constexpr double D3 = 2.185138002766405851135;
+  static constexpr double D3 = 2.185138002766405851151;
 
   /**
    * @brief Initialize the integrator.

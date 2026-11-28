@@ -6,6 +6,8 @@
  *
  * Multi-step implicit methods of increasing order.
  * Industry standard for stiff ODEs in chemical, thermal, and control systems.
+ * The formula of order q is the one of its shape that is exact for
+ * polynomials of degree q.
  *
  * Stability: BDF1-2 are A-stable, BDF3-6 are stiffly stable.
  *
