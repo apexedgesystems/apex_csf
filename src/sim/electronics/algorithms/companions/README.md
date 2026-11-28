@@ -23,8 +23,7 @@ inductors) used by the transient solver.
 6. [Real-Time Considerations](#6-real-time-considerations)
 7. [CLI Tools](#7-cli-tools)
 8. [Example: Transient RC Step](#8-example-transient-rc-step)
-9. [Migration](#9-migration)
-10. [See Also](#10-see-also)
+9. [See Also](#9-see-also)
 
 ---
 
@@ -421,27 +420,7 @@ int main() {
 
 ---
 
-## 9. Migration
-
-`CapacitorCompanion` and `InductorCompanion` gained a member (`prevStep`; 40
-to 48 bytes on x86-64) and `TransientSolver` changed layout. The CUDA
-evaluators keep their names while the records they copy to the device grew.
-Rebuild everything that uses the companions or the transient solver, host
-objects and CUDA libraries together, from one revision.
-
-| Earlier                                                           | Now                                                                                                                                                                                        |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `update(volts, dt)`, `updateAll(nodeVoltages, dt)`                | A third argument, with no default: the method the step was stamped with. Stamping with one method and updating with another leaves a history neither method computed.                      |
-| `evaluateCapacitorsCuda`, `evaluateInductorsCuda` returned `void` | Return `bool`, `[[nodiscard]]`. On false neither output array holds a result: discard both and evaluate on the host.                                                                       |
-| History set field by field (`prevVoltage = v`)                    | `setInitialVoltage(v)` / `setInitialCurrent(i)`: the value, the one before it and the step taken, together. A field set alone leaves the others from the last run.                         |
-| `initializeFromDC(nodeVoltages)`                                  | `initializeFromDC(nodeVoltages, inductorSiemens)`: pass the conductance each inductor stood as in the operating-point solve to recover its current; with the default 0 they start at none. |
-| GEAR2's inductor `geq` 3dt/(2L), `ieq` 2 I1 - I2/2                | 2dt/(3L) and (4 I1 - I2)/3 after an equal step; values computed from the old ones change.                                                                                                  |
-| GEAR2's first step used Gear's weights on a repeated start value  | The first step is backward Euler's (`conductanceFactor` 1), the second onward Gear's. A caller that keeps factors sees one more change of factor at the start.                             |
-| Factors kept across steps keyed on `dt` alone                     | Key on `dt` and `conductanceFactor(dt, method)` together.                                                                                                                                  |
-
----
-
-## 10. See Also
+## 9. See Also
 
 - [Linear devices](../../devices/linear/README.md) - Resistor / capacitor / inductor primitives
 - [Transient solver](../transient/README.md) - Integration methods and time stepping

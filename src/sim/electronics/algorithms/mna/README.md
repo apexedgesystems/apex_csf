@@ -19,8 +19,7 @@ High-performance Modified Nodal Analysis solvers for circuit simulation. Provide
 7. [RT-Safety](#7-rt-safety)
 8. [Requirements](#8-requirements)
 9. [Testing](#9-testing)
-10. [Migration](#10-migration)
-11. [See Also](#11-see-also)
+10. [See Also](#10-see-also)
 
 ---
 
@@ -738,30 +737,7 @@ docker compose run --rm dev-cuda bash -c \
 
 ---
 
-## 10. Migration
-
-The sparse system and the batch workspaces changed layout, and the batch
-solvers their signature: rebuild everything that includes
-`MnaSystemSparse.hpp` or `MnaBatchCuda.cuh` together with the library. Do
-not link or load objects compiled against the earlier headers; rebuild all
-dependents together. The linker and the loader do not reject every mixed
-build: the sparse system's symbols are unchanged while its layout is not.
-
-| Earlier                                                                 | Now                                                                                                                                                                          |
-| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MnaSystemSparse::refactorize()`, `refactorizeInPlace()`                | `factorize()`. It keeps the analysis and the pivot order where they still apply.                                                                                             |
-| `tripletsMatch()` to choose `refactorizeInPlace()`                      | `tripletsMatch()` true: `updateRhs()`. False: `factorize()`.                                                                                                                 |
-| `MnaBatchWorkspace`, `MnaBatchWorkspaceF32` as two structs              | Aliases of `BatchWorkspace<double>` and `BatchWorkspace<float>`. Neither copyable nor movable; no aggregate construction. A forward declaration must name the template.      |
-| `MnaBatchWorkspace::dSuccess`                                           | Gone. Pass `solved` to the solve call, or test the first entry of a system for not-a-number.                                                                                 |
-| `solveBatchCustom(ws, As, bs, dim, batch, stream)` and the `F32` form   | A trailing `bool* solved = nullptr`. Calls compile as they are; a function pointer or wrapper of the six-argument type takes the seventh.                                    |
-| A batch with an unsolved system returned true, that system's `bs` kept  | Returns false; that system is not-a-number in every entry and its flag is false. The others are solved.                                                                      |
-| `MnaSystem::solve()`, `factorize()` on an external-matrix/matvec system | Refused. An external-matrix system solves with `solveInto()` and the workspace it stamps into, in a LAPACKE build. A matvec system holds no matrix and has nothing to solve. |
-| `StampContext::clear()` left borrowed storage as it was                 | Zeroes the external matrix, and the net entries of the matvec output.                                                                                                        |
-| `frequencySweep()` with equal ends, a short span, or no valid span      | One point; both ends; no points.                                                                                                                                             |
-
----
-
-## 11. See Also
+## 10. See Also
 
 **Related Modules:**
 
